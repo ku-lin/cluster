@@ -58,8 +58,8 @@ class TestControlAgentLoop(unittest.TestCase):
     def test_registry_has_three_kinds(self):
         state = self.orch.state()
         kinds = {cap["kind"] for cap in state["capabilities"]}
-        self.assertEqual(kinds, {"skill", "mcp", "api"})
         node = next(n for n in state["nodes"] if n["node_id"] == "it-node")
+        self.assertEqual(kinds, {"skill", "mcp", "api"}, f"plugin_errors={node.get('plugin_errors')}")
         self.assertTrue(node["alive"])
         self.assertIsNotNone(node["metrics"]["cpu_percent"])
 

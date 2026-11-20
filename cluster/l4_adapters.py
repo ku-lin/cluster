@@ -272,6 +272,9 @@ class McpAdapter(Adapter):
         self._next_id = 0
         self._lock = threading.Lock()
         self._tools: list[dict] = []
+        self.startup_timeout = float(spec.get("startup_timeout", 30))
+        self._stderr: list[str] = []
+        self._stderr_lock = threading.Lock()
 
     def _command(self) -> list[str]:
         cmd = self.spec.get("command")
@@ -307,17 +310,36 @@ class McpAdapter(Adapter):
                     continue
 
         threading.Thread(target=reader, daemon=True).start()
-        self._request(
-            "initialize",
-            {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "cluster-l1", "version": "0.1.0"},
-            },
-        )
+        threading.Thread(target=self._stderr_reader, daemon=True).start()
+        try:
+            self._request(
+                "initialize",
+                {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "cluster-l1", "version": "0.1.0"},
+                },
+                timeout=self.startup_timeout,
+            )
+        except (TimeoutError, RuntimeError) as exc:
+            raise RuntimeError(f"MCP server 启动失败（{self.name}）: {exc}; stderr={self.stderr_tail()}") from None
         self._notify("notifications/initialized", {})
         tools = self._request("tools/list", {}).get("tools", [])
         self._tools = tools
+
+    def _stderr_reader(self) -> None:
+        assert self._proc is not None and self._proc.stderr is not None
+        for line in self._proc.stderr:
+            line = line.rstrip()
+            if not line:
+                continue
+            with self._stderr_lock:
+                self._stderr.append(line)
+                self._stderr = self._stderr[-40:]
+
+    def stderr_tail(self) -> str:
+        with self._stderr_lock:
+            return " | ".join(self._stderr[-6:])
 
     def _send(self, payload: dict) -> None:
         assert self._proc is not None and self._proc.stdin is not None
