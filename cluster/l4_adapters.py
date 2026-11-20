@@ -27,6 +27,17 @@ from .l3_capability import Capability
 TEXT_SUFFIXES = {".yaml", ".yml", ".json"}
 
 
+def resolve_command(parts: list[str]) -> list[str]:
+    """把插件声明里的 "python"/"python3" 换成当前解释器。
+
+    跨平台坑：Ubuntu 上通常只有 python3，Windows 上通常只有 python，
+    写死任何一种都会在另一端起不来（CI 上就是这么暴露的）。
+    """
+    if parts and parts[0] in ("python", "python3", "py"):
+        return [sys.executable, *parts[1:]]
+    return parts
+
+
 # ---------------------------------------------------------------- YAML 子集
 def _scalar(text: str) -> Any:
     text = text.strip()
@@ -182,9 +193,9 @@ class SkillAdapter(Adapter):
     def _command(self) -> list[str]:
         cmd = self.spec.get("command") or self.spec.get("entry")
         if isinstance(cmd, str):
-            return shlex.split(cmd, posix=(os.name != "nt"))
+            return resolve_command(shlex.split(cmd, posix=(os.name != "nt")))
         if isinstance(cmd, list):
-            return [str(part) for part in cmd]
+            return resolve_command([str(part) for part in cmd])
         entry = self.spec.get("entry_file")
         if entry:
             return [sys.executable, str(Path(self.source).parent / entry)]
@@ -265,9 +276,9 @@ class McpAdapter(Adapter):
     def _command(self) -> list[str]:
         cmd = self.spec.get("command")
         if isinstance(cmd, str):
-            return shlex.split(cmd, posix=(os.name != "nt"))
+            return resolve_command(shlex.split(cmd, posix=(os.name != "nt")))
         if isinstance(cmd, list):
-            return [str(x) for x in cmd]
+            return resolve_command([str(x) for x in cmd])
         raise ValueError(f"mcp {self.name}: 缺少 command")
 
     def _ensure(self) -> None:
