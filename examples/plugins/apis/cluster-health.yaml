@@ -1,0 +1,14 @@
+# 示例 API 插件：直接读控制面的健康接口（GET），证明"API 也能被当成能力注册"。
+# base_url 在 demo/selfcheck 里会被替换成实际端口，这里给默认值。
+name: cluster-health
+version: "1.0.0"
+description: 读控制面 /control/health（无进程，纯转发）
+method: GET
+base_url: "http://127.0.0.1:18100"
+path: "/control/health"
+tags: ["demo", "api"]
+cost_model:
+  est_cpu_ms: 5
+  est_mem_mb: 8
+requirements:
+  os: ["windows", "linux"]

@@ -1,0 +1,990 @@
+{
+  "router": {
+    "node_id": "win-router",
+    "url": "https://0.0.0.0:18100",
+    "peers": [
+      "https://192.168.70.145:18101"
+    ],
+    "quorum": 2,
+    "uptime_s": 161.5,
+    "policy": {
+      "cpu_percent_max": 92.0,
+      "mem_percent_max": 92.0,
+      "net_bytes_per_sec_max": 0,
+      "max_workers": 4
+    }
+  },
+  "nodes": [
+    {
+      "node_id": "kali-node",
+      "url": "https://10.14.14.2:17100",
+      "os": "linux",
+      "mesh_ip": "10.14.14.2",
+      "alive": true,
+      "caps": 5,
+      "max_workers": 4,
+      "metrics": {
+        "os": "linux",
+        "host": "kali",
+        "cpu_count": 8,
+        "ts": 1795174250.2493784,
+        "cpu_percent": 0.4,
+        "mem_percent": 7.9,
+        "mem_used_mb": 938.8,
+        "mem_total_mb": 11954.7,
+        "net_in_rate": 40780.5,
+        "net_out_rate": 43009.1,
+        "net_unit": "bytes/s",
+        "workers": 0,
+        "node_id": "kali-node",
+        "max_workers": 4,
+        "mesh_ip": "10.14.14.2",
+        "uptime_s": 46.4
+      },
+      "plugin_errors": []
+    },
+    {
+      "node_id": "win-node",
+      "url": "https://10.14.14.1:17100",
+      "os": "windows",
+      "mesh_ip": "10.14.14.1",
+      "alive": true,
+      "caps": 5,
+      "max_workers": 4,
+      "metrics": {
+        "os": "windows",
+        "host": "DESKTOP-PD3AE9A",
+        "cpu_count": 32,
+        "ts": 1795174249.7032955,
+        "cpu_percent": 23.7,
+        "mem_percent": 68.0,
+        "mem_used_mb": 22414.2,
+        "mem_total_mb": 32559.9,
+        "net_in_rate": 55.5,
+        "net_out_rate": 466.5,
+        "net_unit": "packets/s",
+        "workers": 0,
+        "node_id": "win-node",
+        "max_workers": 4,
+        "mesh_ip": "10.14.14.1",
+        "uptime_s": 158.7
+      },
+      "plugin_errors": []
+    }
+  ],
+  "capabilities": [
+    {
+      "cap_id": "mcp:echo@1.0.0",
+      "kind": "mcp",
+      "name": "echo",
+      "version": "1.0.0",
+      "description": "原样返回 text",
+      "node_id": "kali-node",
+      "endpoint": "agent://kali-node/mcp:echo@1.0.0",
+      "tool": "echo",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "output_schema": {},
+      "requirements": {
+        "os": [
+          "windows",
+          "linux"
+        ]
+      },
+      "cost_model": {
+        "est_cpu_ms": 10,
+        "est_mem_mb": 48
+      },
+      "health": {
+        "status": "ready",
+        "last_check": 1795174249.0887117
+      },
+      "tags": [
+        "demo",
+        "mcp"
+      ]
+    },
+    {
+      "cap_id": "mcp:echo/add@1.0.0",
+      "kind": "mcp",
+      "name": "echo/add",
+      "version": "1.0.0",
+      "description": "把 a 和 b 相加",
+      "node_id": "kali-node",
+      "endpoint": "agent://kali-node/mcp:echo/add@1.0.0",
+      "tool": "add",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "number"
+          },
+          "b": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "a",
+          "b"
+        ]
+      },
+      "output_schema": {},
+      "requirements": {
+        "os": [
+          "windows",
+          "linux"
+        ]
+      },
+      "cost_model": {
+        "est_cpu_ms": 10,
+        "est_mem_mb": 48
+      },
+      "health": {
+        "status": "ready",
+        "last_check": 1795174249.088715
+      },
+      "tags": [
+        "demo",
+        "mcp"
+      ]
+    },
+    {
+      "cap_id": "skill:uppercase@1.0.0",
+      "kind": "skill",
+      "name": "uppercase",
+      "version": "1.0.0",
+      "description": "演示用 Skill：把 input.text 转大写（可选反转）",
+      "node_id": "kali-node",
+      "endpoint": "agent://kali-node/skill:uppercase@1.0.0",
+      "tool": "uppercase",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "upper": {
+            "type": "string"
+          }
+        }
+      },
+      "requirements": {
+        "os": [
+          "windows",
+          "linux"
+        ]
+      },
+      "cost_model": {
+        "est_cpu_ms": 20,
+        "est_mem_mb": 32
+      },
+      "health": {
+        "status": "ready",
+        "last_check": 1795174249.088716
+      },
+      "tags": [
+        "demo",
+        "text"
+      ]
+    },
+    {
+      "cap_id": "api:cluster-health@1.0.0",
+      "kind": "api",
+      "name": "cluster-health",
+      "version": "1.0.0",
+      "description": "读控制面 /control/health（无进程，纯转发）",
+      "node_id": "kali-node",
+      "endpoint": "agent://kali-node/api:cluster-health@1.0.0",
+      "tool": "cluster-health",
+      "input_schema": {},
+      "output_schema": {},
+      "requirements": {
+        "os": [
+          "windows",
+          "linux"
+        ]
+      },
+      "cost_model": {
+        "est_cpu_ms": 5,
+        "est_mem_mb": 8
+      },
+      "health": {
+        "status": "ready",
+        "last_check": 1795174249.088717
+      },
+      "tags": [
+        "demo",
+        "api"
+      ]
+    },
+    {
+      "cap_id": "skill:kalisys@1.0.0",
+      "kind": "skill",
+      "name": "kalisys",
+      "version": "1.0.0",
+      "description": "返回本机系统信息（Kali 节点专属）",
+      "node_id": "kali-node",
+      "endpoint": "agent://kali-node/skill:kalisys@1.0.0",
+      "tool": "kalisys",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      },
+      "output_schema": {},
+      "requirements": {
+        "os": [
+          "linux"
+        ]
+      },
+      "cost_model": {
+        "est_cpu_ms": 15,
+        "est_mem_mb": 16
+      },
+      "health": {
+        "status": "ready",
+        "last_check": 1795174249.0887175
+      },
+      "tags": [
+        "demo",
+        "system",
+        "linux"
+      ]
+    },
+    {
+      "cap_id": "mcp:echo@1.0.0",
+      "kind": "mcp",
+      "name": "echo",
+      "version": "1.0.0",
+      "description": "原样返回 text",
+      "node_id": "win-node",
+      "endpoint": "agent://win-node/mcp:echo@1.0.0",
+      "tool": "echo",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "output_schema": {},
+      "requirements": {
+        "os": [
+          "windows",
+          "linux"
+        ]
+      },
+      "cost_model": {
+        "est_cpu_ms": 10,
+        "est_mem_mb": 48
+      },
+      "health": {
+        "status": "ready",
+        "last_check": 1795174249.722988
+      },
+      "tags": [
+        "demo",
+        "mcp"
+      ]
+    },
+    {
+      "cap_id": "mcp:echo/add@1.0.0",
+      "kind": "mcp",
+      "name": "echo/add",
+      "version": "1.0.0",
+      "description": "把 a 和 b 相加",
+      "node_id": "win-node",
+      "endpoint": "agent://win-node/mcp:echo/add@1.0.0",
+      "tool": "add",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "number"
+          },
+          "b": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "a",
+          "b"
+        ]
+      },
+      "output_schema": {},
+      "requirements": {
+        "os": [
+          "windows",
+          "linux"
+        ]
+      },
+      "cost_model": {
+        "est_cpu_ms": 10,
+        "est_mem_mb": 48
+      },
+      "health": {
+        "status": "ready",
+        "last_check": 1795174249.7229924
+      },
+      "tags": [
+        "demo",
+        "mcp"
+      ]
+    },
+    {
+      "cap_id": "skill:uppercase@1.0.0",
+      "kind": "skill",
+      "name": "uppercase",
+      "version": "1.0.0",
+      "description": "演示用 Skill：把 input.text 转大写（可选反转）",
+      "node_id": "win-node",
+      "endpoint": "agent://win-node/skill:uppercase@1.0.0",
+      "tool": "uppercase",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "upper": {
+            "type": "string"
+          }
+        }
+      },
+      "requirements": {
+        "os": [
+          "windows",
+          "linux"
+        ]
+      },
+      "cost_model": {
+        "est_cpu_ms": 20,
+        "est_mem_mb": 32
+      },
+      "health": {
+        "status": "ready",
+        "last_check": 1795174249.7229943
+      },
+      "tags": [
+        "demo",
+        "text"
+      ]
+    },
+    {
+      "cap_id": "api:cluster-health@1.0.0",
+      "kind": "api",
+      "name": "cluster-health",
+      "version": "1.0.0",
+      "description": "读控制面 /control/health（无进程，纯转发）",
+      "node_id": "win-node",
+      "endpoint": "agent://win-node/api:cluster-health@1.0.0",
+      "tool": "cluster-health",
+      "input_schema": {},
+      "output_schema": {},
+      "requirements": {
+        "os": [
+          "windows",
+          "linux"
+        ]
+      },
+      "cost_model": {
+        "est_cpu_ms": 5,
+        "est_mem_mb": 8
+      },
+      "health": {
+        "status": "ready",
+        "last_check": 1795174249.7229965
+      },
+      "tags": [
+        "demo",
+        "api"
+      ]
+    },
+    {
+      "cap_id": "skill:winsys@1.0.0",
+      "kind": "skill",
+      "name": "winsys",
+      "version": "1.0.0",
+      "description": "返回本机系统信息（Windows 节点专属）",
+      "node_id": "win-node",
+      "endpoint": "agent://win-node/skill:winsys@1.0.0",
+      "tool": "winsys",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      },
+      "output_schema": {},
+      "requirements": {
+        "os": [
+          "windows"
+        ]
+      },
+      "cost_model": {
+        "est_cpu_ms": 15,
+        "est_mem_mb": 16
+      },
+      "health": {
+        "status": "ready",
+        "last_check": 1795174249.722998
+      },
+      "tags": [
+        "demo",
+        "system",
+        "windows"
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "t-07ab2717",
+      "status": "running",
+      "required_caps": {
+        "cap_ids": [
+          "skill:kalisys@1.0.0"
+        ]
+      },
+      "input": {
+        "text": "hello from windows"
+      },
+      "timeout": 20.0,
+      "created": 1795171790.6771939,
+      "updated": 1795173968.148798,
+      "node_id": "kali-node",
+      "worker_id": "w-2a4ec12b",
+      "output": null,
+      "error": null,
+      "reason": null,
+      "submitted_by": "orchestrator",
+      "parent": null,
+      "result_log": [
+        {
+          "ts": 1795171972.0235093,
+          "node_id": "kali-node",
+          "status": "done"
+        },
+        {
+          "ts": 1795171972.179543,
+          "node_id": "kali-node",
+          "status": "done"
+        },
+        {
+          "ts": 1795171972.3879867,
+          "node_id": "kali-node",
+          "status": "done"
+        },
+        {
+          "ts": 1795171972.485827,
+          "node_id": "kali-node",
+          "status": "done"
+        },
+        {
+          "ts": 1795171972.5283494,
+          "node_id": "kali-node",
+          "status": "done"
+        },
+        {
+          "ts": 1795173968.1944954,
+          "node_id": "kali-node",
+          "status": "done"
+        },
+        {
+          "ts": 1795173968.2038908,
+          "node_id": "kali-node",
+          "status": "done"
+        },
+        {
+          "ts": 1795173968.2144144,
+          "node_id": "kali-node",
+          "status": "done"
+        },
+        {
+          "ts": 1795173968.2252257,
+          "node_id": "kali-node",
+          "status": "done"
+        },
+        {
+          "ts": 1795173968.2362847,
+          "node_id": "kali-node",
+          "status": "done"
+        }
+      ],
+      "cap_id": "skill:kalisys@1.0.0"
+    },
+    {
+      "id": "t-d5abd406",
+      "status": "done",
+      "required_caps": {
+        "cap_ids": [
+          "skill:kalisys@1.0.0"
+        ]
+      },
+      "input": {
+        "text": "hello from windows"
+      },
+      "timeout": 20.0,
+      "created": 1795171867.3686337,
+      "updated": 1795171905.3235688,
+      "node_id": "kali-node",
+      "worker_id": "w-4c67f7f1",
+      "output": {
+        "probe": true
+      },
+      "error": null,
+      "reason": null,
+      "submitted_by": "orchestrator",
+      "parent": null,
+      "result_log": [
+        {
+          "ts": 1795171905.323571,
+          "node_id": "kali-node",
+          "status": "done"
+        }
+      ],
+      "cap_id": "skill:kalisys@1.0.0",
+      "elapsed_ms": null
+    },
+    {
+      "id": "t-3ae8202f",
+      "status": "done",
+      "required_caps": {
+        "cap_ids": [
+          "skill:kalisys@1.0.0"
+        ]
+      },
+      "input": {
+        "text": "hello from windows"
+      },
+      "timeout": 20.0,
+      "created": 1795174001.6781533,
+      "updated": 1795174003.5635302,
+      "node_id": "kali-node",
+      "worker_id": "w-91a06cb5",
+      "output": {
+        "host": "kali",
+        "os": "Linux",
+        "release": "7.2.15+kali-amd64",
+        "machine": "x86_64",
+        "python": "3.13.12",
+        "pid": 6472,
+        "ts": 1795174003.5551999
+      },
+      "error": null,
+      "reason": null,
+      "submitted_by": "orchestrator",
+      "parent": null,
+      "result_log": [
+        {
+          "ts": 1795174003.5635324,
+          "node_id": "kali-node",
+          "status": "done"
+        }
+      ],
+      "elapsed_ms": 20.9
+    },
+    {
+      "id": "t-dc696a63",
+      "status": "done",
+      "required_caps": {
+        "cap_ids": [
+          "skill:winsys@1.0.0"
+        ]
+      },
+      "input": {
+        "text": "hello from windows"
+      },
+      "timeout": 20.0,
+      "created": 1795174008.7635498,
+      "updated": 1795174010.959079,
+      "node_id": "win-node",
+      "worker_id": "w-87625b60",
+      "output": {
+        "host": "DESKTOP-PD3AE9A",
+        "os": "Windows",
+        "release": "11",
+        "machine": "AMD64",
+        "python": "3.13.5",
+        "pid": 31840,
+        "ts": 1795174010.9302464
+      },
+      "error": null,
+      "reason": null,
+      "submitted_by": "orchestrator",
+      "parent": null,
+      "result_log": [
+        {
+          "ts": 1795174010.9590812,
+          "node_id": "win-node",
+          "status": "done"
+        }
+      ],
+      "cap_id": "skill:winsys@1.0.0",
+      "elapsed_ms": 361.0
+    },
+    {
+      "id": "t-64babade",
+      "status": "running",
+      "required_caps": {
+        "all_of": [
+          "uppercase"
+        ]
+      },
+      "input": {
+        "text": "hello from windows"
+      },
+      "timeout": 20.0,
+      "created": 1795174011.2768486,
+      "updated": 1795174011.5669994,
+      "node_id": "kali-node",
+      "worker_id": "w-20a40974",
+      "output": null,
+      "error": null,
+      "reason": null,
+      "submitted_by": "orchestrator",
+      "parent": null,
+      "result_log": [],
+      "cap_id": "skill:uppercase@1.0.0"
+    },
+    {
+      "id": "t-3663d213",
+      "status": "done",
+      "required_caps": {
+        "cap_ids": [
+          "skill:kalisys@1.0.0"
+        ]
+      },
+      "input": {
+        "text": "hello from windows"
+      },
+      "timeout": 20.0,
+      "created": 1795174133.4537134,
+      "updated": 1795174135.1717072,
+      "node_id": "kali-node",
+      "worker_id": "w-dc6ee618",
+      "output": {
+        "host": "kali",
+        "os": "Linux",
+        "release": "7.2.15+kali-amd64",
+        "machine": "x86_64",
+        "python": "3.13.12",
+        "pid": 6846,
+        "ts": 1795174135.1624334
+      },
+      "error": null,
+      "reason": null,
+      "submitted_by": "orchestrator",
+      "parent": null,
+      "result_log": [
+        {
+          "ts": 1795174135.1717093,
+          "node_id": "kali-node",
+          "status": "done"
+        }
+      ],
+      "elapsed_ms": 22.3
+    },
+    {
+      "id": "t-74783203",
+      "status": "done",
+      "required_caps": {
+        "cap_ids": [
+          "skill:winsys@1.0.0"
+        ]
+      },
+      "input": {
+        "text": "hello from windows"
+      },
+      "timeout": 20.0,
+      "created": 1795174135.9924004,
+      "updated": 1795174138.029238,
+      "node_id": "win-node",
+      "worker_id": "w-42fbe665",
+      "output": {
+        "host": "DESKTOP-PD3AE9A",
+        "os": "Windows",
+        "release": "11",
+        "machine": "AMD64",
+        "python": "3.13.5",
+        "pid": 51048,
+        "ts": 1795174138.000491
+      },
+      "error": null,
+      "reason": null,
+      "submitted_by": "orchestrator",
+      "parent": null,
+      "result_log": [
+        {
+          "ts": 1795174138.0292408,
+          "node_id": "win-node",
+          "status": "done"
+        }
+      ],
+      "cap_id": "skill:winsys@1.0.0",
+      "elapsed_ms": 323.8
+    },
+    {
+      "id": "t-81c22c10",
+      "status": "done",
+      "required_caps": {
+        "all_of": [
+          "uppercase"
+        ]
+      },
+      "input": {
+        "text": "hello from windows"
+      },
+      "timeout": 20.0,
+      "created": 1795174138.4730234,
+      "updated": 1795174175.6794372,
+      "node_id": "kali-node",
+      "worker_id": "w-probe",
+      "output": {
+        "upper": "PROBE"
+      },
+      "error": null,
+      "reason": null,
+      "submitted_by": "orchestrator",
+      "parent": null,
+      "result_log": [
+        {
+          "ts": 1795174175.6794405,
+          "node_id": "kali-node",
+          "status": "done"
+        }
+      ],
+      "cap_id": "skill:uppercase@1.0.0",
+      "elapsed_ms": null
+    },
+    {
+      "id": "t-2e0ecc74",
+      "status": "done",
+      "required_caps": {
+        "all_of": [
+          "uppercase"
+        ]
+      },
+      "input": {
+        "text": "hello from windows"
+      },
+      "timeout": 20.0,
+      "created": 1795174216.7956,
+      "updated": 1795174218.5037527,
+      "node_id": "kali-node",
+      "worker_id": "w-9199b29d",
+      "output": {
+        "upper": "HELLO FROM WINDOWS",
+        "length": 18
+      },
+      "error": null,
+      "reason": null,
+      "submitted_by": "orchestrator",
+      "parent": null,
+      "result_log": [
+        {
+          "ts": 1795174218.503755,
+          "node_id": "kali-node",
+          "status": "done"
+        }
+      ],
+      "elapsed_ms": 19.6
+    },
+    {
+      "id": "t-565dc415",
+      "status": "done",
+      "required_caps": {
+        "cap_ids": [
+          "skill:kalisys@1.0.0"
+        ]
+      },
+      "input": {
+        "text": "hello from windows"
+      },
+      "timeout": 20.0,
+      "created": 1795174224.4647608,
+      "updated": 1795174224.6265495,
+      "node_id": "kali-node",
+      "worker_id": "w-f1969223",
+      "output": {
+        "host": "kali",
+        "os": "Linux",
+        "release": "7.2.15+kali-amd64",
+        "machine": "x86_64",
+        "python": "3.13.12",
+        "pid": 7157,
+        "ts": 1795174224.6057613
+      },
+      "error": null,
+      "reason": null,
+      "submitted_by": "orchestrator",
+      "parent": null,
+      "result_log": [
+        {
+          "ts": 1795174224.6265523,
+          "node_id": "kali-node",
+          "status": "done"
+        }
+      ],
+      "cap_id": "skill:kalisys@1.0.0",
+      "elapsed_ms": 24.3
+    },
+    {
+      "id": "t-94760f50",
+      "status": "done",
+      "required_caps": {
+        "cap_ids": [
+          "skill:winsys@1.0.0"
+        ]
+      },
+      "input": {
+        "text": "hello from windows"
+      },
+      "timeout": 20.0,
+      "created": 1795174225.1343303,
+      "updated": 1795174227.1662583,
+      "node_id": "win-node",
+      "worker_id": "w-6d615317",
+      "output": {
+        "host": "DESKTOP-PD3AE9A",
+        "os": "Windows",
+        "release": "11",
+        "machine": "AMD64",
+        "python": "3.13.5",
+        "pid": 52720,
+        "ts": 1795174227.1385949
+      },
+      "error": null,
+      "reason": null,
+      "submitted_by": "orchestrator",
+      "parent": null,
+      "result_log": [
+        {
+          "ts": 1795174227.1662607,
+          "node_id": "win-node",
+          "status": "done"
+        }
+      ],
+      "cap_id": "skill:winsys@1.0.0",
+      "elapsed_ms": 336.6
+    },
+    {
+      "id": "t-1548a8dc",
+      "status": "done",
+      "required_caps": {
+        "all_of": [
+          "uppercase"
+        ]
+      },
+      "input": {
+        "text": "hello from windows"
+      },
+      "timeout": 20.0,
+      "created": 1795174227.6360757,
+      "updated": 1795174227.8332572,
+      "node_id": "kali-node",
+      "worker_id": "w-5fe4f412",
+      "output": {
+        "upper": "HELLO FROM WINDOWS",
+        "length": 18
+      },
+      "error": null,
+      "reason": null,
+      "submitted_by": "orchestrator",
+      "parent": null,
+      "result_log": [
+        {
+          "ts": 1795174227.8332598,
+          "node_id": "kali-node",
+          "status": "done"
+        }
+      ],
+      "cap_id": "skill:uppercase@1.0.0",
+      "elapsed_ms": 18.5
+    }
+  ],
+  "dispatch_log": [
+    {
+      "task": "t-3663d213",
+      "event": "dispatched",
+      "node": "kali-node",
+      "worker": "w-dc6ee618",
+      "cap": "skill:kalisys@1.0.0",
+      "router": "win-router"
+    },
+    {
+      "task": "t-74783203",
+      "event": "dispatched",
+      "node": "win-node",
+      "worker": "w-42fbe665",
+      "cap": "skill:winsys@1.0.0",
+      "router": "win-router"
+    },
+    {
+      "task": "t-81c22c10",
+      "event": "dispatched",
+      "node": "kali-node",
+      "worker": "w-4621b3b9",
+      "cap": "skill:uppercase@1.0.0",
+      "router": "win-router"
+    },
+    {
+      "task": "t-2e0ecc74",
+      "event": "dispatched",
+      "node": "kali-node",
+      "worker": "w-9199b29d",
+      "cap": "skill:uppercase@1.0.0",
+      "router": "win-router"
+    },
+    {
+      "task": "t-565dc415",
+      "event": "dispatched",
+      "node": "kali-node",
+      "worker": "w-f1969223",
+      "cap": "skill:kalisys@1.0.0",
+      "router": "win-router"
+    },
+    {
+      "task": "t-94760f50",
+      "event": "dispatched",
+      "node": "win-node",
+      "worker": "w-6d615317",
+      "cap": "skill:winsys@1.0.0",
+      "router": "win-router"
+    },
+    {
+      "task": "t-1548a8dc",
+      "event": "dispatched",
+      "node": "kali-node",
+      "worker": "w-5fe4f412",
+      "cap": "skill:uppercase@1.0.0",
+      "router": "win-router"
+    }
+  ],
+  "ts": 1795174250.4480395
+}

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cluster-mesh"
+version = "0.1.0"
+description = "分布式多机 Agent 集群：EasyTier 组网 + 去中心化控制面 + 统一能力注册"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "ku-lin" }]
+keywords = ["agent", "cluster", "easytier", "mtls", "mcp", "orchestration"]
+dependencies = []  # 纯标准库；mTLS 依赖系统 openssl 可执行文件
+
+[project.scripts]
+cluster = "cluster.cli:main"
+
+[tool.setuptools]
+packages = ["cluster"]
+
+[tool.setuptools.package-data]
+cluster = ["../dashboard/*.html"]

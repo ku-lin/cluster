@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>cluster · 集群面板</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0d1117; color: #c9d1d9; font: 14px/1.5 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }
+  header { padding: 16px 22px; border-bottom: 1px solid #21262d; display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+  h1 { font-size: 17px; margin: 0; letter-spacing: .5px; }
+  .muted { color: #8b949e; font-size: 12px; }
+  main { padding: 18px 22px 40px; display: grid; gap: 18px; }
+  section { background: #11151c; border: 1px solid #21262d; border-radius: 8px; padding: 14px 16px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .8px; color: #8b949e; margin: 0 0 10px; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #1b2029; white-space: nowrap; }
+  th { color: #8b949e; font-weight: 500; font-size: 12px; }
+  tbody tr:hover { background: #161b22; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; border: 1px solid #30363d; }
+  .ok { color: #3fb950; border-color: #238636; }
+  .warn { color: #d29922; border-color: #9e6a03; }
+  .bad { color: #f85149; border-color: #b62324; }
+  .bar { height: 6px; background: #21262d; border-radius: 3px; overflow: hidden; width: 90px; display: inline-block; vertical-align: middle; }
+  .bar > i { display: block; height: 100%; background: #1f6feb; }
+  code { font-size: 12px; color: #79c0ff; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>cluster · 集群面板</h1>
+  <span class="muted" id="router">loading…</span>
+  <span class="muted" id="updated"></span>
+</header>
+<main>
+  <section>
+    <h2>节点（L1 Node Agent）</h2>
+    <table>
+      <thead><tr><th>节点</th><th>系统</th><th>mesh IP</th><th>状态</th><th>CPU</th><th>内存</th><th>worker</th><th>能力</th><th>地址</th></tr></thead>
+      <tbody id="nodes"><tr><td colspan="9" class="muted">…</td></tr></tbody>
+    </table>
+  </section>
+  <div class="grid">
+    <section>
+      <h2>能力注册表（L3）</h2>
+      <table>
+        <thead><tr><th>cap_id</th><th>kind</th><th>节点</th></tr></thead>
+        <tbody id="caps"><tr><td colspan="3" class="muted">…</td></tr></tbody>
+      </table>
+    </section>
+    <section>
+      <h2>任务（L2 分派）</h2>
+      <table>
+        <thead><tr><th>id</th><th>状态</th><th>节点</th><th>能力</th><th>耗时</th></tr></thead>
+        <tbody id="tasks"><tr><td colspan="5" class="muted">…</td></tr></tbody>
+      </table>
+    </section>
+  </div>
+  <section>
+    <h2>最近分派日志</h2>
+    <table>
+      <thead><tr><th>task</th><th>event</th><th>node</th><th>router</th><th>reason</th></tr></thead>
+      <tbody id="log"><tr><td colspan="5" class="muted">…</td></tr></tbody>
+    </table>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (v) => String(v ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+const bar = (pct) => {
+  const v = Math.max(0, Math.min(100, Number(pct) || 0));
+  return `<span class="bar"><i style="width:${v}%;background:${v > 85 ? "#f85149" : v > 60 ? "#d29922" : "#3fb950"}"></i></span> ${v.toFixed(0)}%`;
+};
+
+async function tick() {
+  try {
+    const res = await fetch("control/state", { cache: "no-store" });
+    const s = await res.json();
+    const r = s.router;
+    $("router").textContent = `router ${r.node_id} · peers ${r.peers.length} · quorum ${r.quorum} · 策略 cpu<${r.policy.cpu_percent_max}% mem<${r.policy.mem_percent_max}% workers<${r.policy.max_workers}`;
+    $("updated").textContent = "更新于 " + new Date().toLocaleTimeString();
+
+    $("nodes").innerHTML = s.nodes.length ? s.nodes.map((n) => {
+      const m = n.metrics || {};
+      const cls = n.alive ? "ok" : "bad";
+      return `<tr>
+        <td><code>${esc(n.node_id)}</code></td>
+        <td>${esc(n.os || "?")}</td>
+        <td>${esc(n.mesh_ip || "-")}</td>
+        <td><span class="pill ${cls}">${n.alive ? "alive" : "expired"}</span></td>
+        <td>${m.cpu_percent == null ? "-" : bar(m.cpu_percent)}</td>
+        <td>${m.mem_percent == null ? "-" : bar(m.mem_percent)}</td>
+        <td>${m.workers ?? 0}/${n.max_workers ?? "?"}</td>
+        <td>${n.caps}</td>
+        <td class="muted">${esc(n.url || "")}</td>
+      </tr>`;
+    }).join("") : `<tr><td colspan="9" class="muted">没有节点注册</td></tr>`;
+
+    $("caps").innerHTML = s.capabilities.length ? s.capabilities.map((c) =>
+      `<tr><td><code>${esc(c.cap_id)}</code></td><td>${esc(c.kind)}</td><td>${esc(c.node_id)}</td></tr>`).join("")
+      : `<tr><td colspan="3" class="muted">没有能力注册</td></tr>`;
+
+    const tasks = [...s.tasks].reverse().slice(0, 12);
+    $("tasks").innerHTML = tasks.length ? tasks.map((t) => {
+      const cls = t.status === "done" ? "ok" : t.status === "failed" ? "bad" : "warn";
+      return `<tr>
+        <td><code>${esc(t.id)}</code></td>
+        <td><span class="pill ${cls}">${esc(t.status)}</span></td>
+        <td>${esc(t.node_id || "-")}</td>
+        <td class="muted">${esc(t.cap_id || (t.required_caps ? JSON.stringify(t.required_caps) : "-"))}</td>
+        <td>${t.elapsed_ms ? Math.round(t.elapsed_ms) + "ms" : "-"}</td>
+      </tr>`;
+    }).join("") : `<tr><td colspan="5" class="muted">还没有任务</td></tr>`;
+
+    const logs = [...s.dispatch_log].reverse().slice(0, 12);
+    $("log").innerHTML = logs.length ? logs.map((l) =>
+      `<tr><td><code>${esc(l.task)}</code></td><td>${esc(l.event)}</td><td>${esc(l.node || "-")}</td><td>${esc(l.router || "-")}</td><td class="muted">${esc(l.reason || "")}</td></tr>`).join("")
+      : `<tr><td colspan="5" class="muted">暂无</td></tr>`;
+  } catch (err) {
+    $("updated").textContent = "控制面不可达：" + err;
+  }
+}
+tick();
+setInterval(tick, 2000);
+</script>
+</body>
+</html>

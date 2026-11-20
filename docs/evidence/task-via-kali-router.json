@@ -1,0 +1,38 @@
+{
+  "id": "t-0c276824",
+  "status": "done",
+  "required_caps": {
+    "cap_ids": [
+      "skill:winsys@1.0.0"
+    ]
+  },
+  "input": {
+    "text": "hello from windows"
+  },
+  "timeout": 20.0,
+  "created": 1795174254.7383313,
+  "updated": 1795174255.154819,
+  "node_id": "win-node",
+  "worker_id": "w-ba741b5b",
+  "output": {
+    "host": "DESKTOP-PD3AE9A",
+    "os": "Windows",
+    "release": "11",
+    "machine": "AMD64",
+    "python": "3.13.5",
+    "pid": 20052,
+    "ts": 1795174255.1027997
+  },
+  "error": null,
+  "reason": null,
+  "submitted_by": "orchestrator",
+  "parent": null,
+  "result_log": [
+    {
+      "ts": 1795174255.1548219,
+      "node_id": "win-node",
+      "status": "done"
+    }
+  ],
+  "elapsed_ms": 311.7
+}

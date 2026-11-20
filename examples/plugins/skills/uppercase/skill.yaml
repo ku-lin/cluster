@@ -1,0 +1,22 @@
+# 示例 Skill：把文本转大写／反转
+name: uppercase
+version: "1.0.0"
+description: 演示用 Skill：把 input.text 转大写（可选反转）
+command: ["python", "run.py"]
+tags: ["demo", "text"]
+cost_model:
+  est_cpu_ms: 20
+  est_mem_mb: 32
+requirements:
+  os: ["windows", "linux"]
+input_schema:
+  type: object
+  properties:
+    text:
+      type: string
+  required: ["text"]
+output_schema:
+  type: object
+  properties:
+    upper:
+      type: string

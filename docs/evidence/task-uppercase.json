@@ -1,0 +1,34 @@
+{
+  "id": "t-1548a8dc",
+  "status": "done",
+  "required_caps": {
+    "all_of": [
+      "uppercase"
+    ]
+  },
+  "input": {
+    "text": "hello from windows"
+  },
+  "timeout": 20.0,
+  "created": 1795174227.6360757,
+  "updated": 1795174227.8332572,
+  "node_id": "kali-node",
+  "worker_id": "w-5fe4f412",
+  "output": {
+    "upper": "HELLO FROM WINDOWS",
+    "length": 18
+  },
+  "error": null,
+  "reason": null,
+  "submitted_by": "orchestrator",
+  "parent": null,
+  "result_log": [
+    {
+      "ts": 1795174227.8332598,
+      "node_id": "kali-node",
+      "status": "done"
+    }
+  ],
+  "cap_id": "skill:uppercase@1.0.0",
+  "elapsed_ms": 18.5
+}

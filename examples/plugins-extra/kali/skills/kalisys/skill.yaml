@@ -1,0 +1,14 @@
+# 只在 Kali 节点注册的能力（requirements.os 也会二次过滤）
+name: kalisys
+version: "1.0.0"
+description: 返回本机系统信息（Kali 节点专属）
+command: ["python3", "run.py"]
+tags: ["demo", "system", "linux"]
+cost_model:
+  est_cpu_ms: 15
+  est_mem_mb: 16
+requirements:
+  os: ["linux"]
+input_schema:
+  type: object
+  properties: {}

@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.11", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Show environment
+        run: |
+          python -V
+          openssl version
+
+      - name: Format / syntax check
+        run: python -m compileall -q cluster tests scripts
+
+      - name: Unit + integration tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Built-in selfcheck
+        run: python -m cluster selfcheck
+
+      - name: CLI smoke
+        run: |
+          python -m cluster net init --secret ci-secret --mesh-ip 10.99.0.1 --out build/ci.toml
+          python -m cluster certs init --dir build/tls
+          python -m cluster certs issue --dir build/tls --name ci --san IP:127.0.0.1
+          python -m cluster certs verify --dir build/tls --name ci

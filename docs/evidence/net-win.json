@@ -1,0 +1,116 @@
+{
+  "ts": 1795174250.8352377,
+  "peers": [
+    {
+      "cidr": "10.14.14.1/24",
+      "ipv4": "10.14.14.1",
+      "hostname": "DESKTOP-PD3AE9A",
+      "cost": "Local",
+      "lat_ms": "-",
+      "loss_rate": "-",
+      "rx_bytes": "-",
+      "tx_bytes": "-",
+      "tunnel_proto": "-",
+      "nat_type": "PortRestricted",
+      "id": "1368333948",
+      "version": "2.6.4-8428a89d"
+    },
+    {
+      "cidr": "10.14.14.2/24",
+      "ipv4": "10.14.14.2",
+      "hostname": "kali",
+      "cost": "p2p",
+      "lat_ms": "0.41",
+      "loss_rate": "0.0%",
+      "rx_bytes": "311.30 kB",
+      "tx_bytes": "333.29 kB",
+      "tunnel_proto": "tcp",
+      "nat_type": "PortRestricted",
+      "id": "3118686767",
+      "version": "2.6.4-8428a89d"
+    }
+  ],
+  "node": {
+    "peer_id": 1368333948,
+    "ipv4_addr": "10.14.14.1/24",
+    "proxy_cidrs": [],
+    "hostname": "DESKTOP-PD3AE9A",
+    "stun_info": {
+      "udp_nat_type": 5,
+      "tcp_nat_type": 6,
+      "last_update_time": 1795173936,
+      "public_ip": [
+        "183.195.9.138"
+      ],
+      "min_port": 7959,
+      "max_port": 7959
+    },
+    "inst_id": "5a2d8f20-cf04-44ee-952b-7c8b30741cef",
+    "listeners": [
+      "ring://5a2d8f20-cf04-44ee-952b-7c8b30741cef",
+      "tcp://0.0.0.0:11010",
+      "tcp://[::]:11010",
+      "udp://0.0.0.0:11010",
+      "udp://[::]:11010"
+    ],
+    "config": "instance_id = \"5a2d8f20-cf04-44ee-952b-7c8b30741cef\"\nipv4 = \"10.14.14.1\"\nlisteners = [\n    \"tcp://0.0.0.0:11010\",\n    \"udp://0.0.0.0:11010\",\n]\n\n[network_identity]\nnetwork_name = \"cluster-lab\"\nnetwork_secret = \"<redacted-network-secret>\"\n\n[[peer]]\nuri = \"tcp://192.168.70.145:11010\"\n\n[flags]\nneed_p2p = true\nno_tun = true\nuse_smoltcp = true\n",
+    "version": "2.6.4-8428a89d",
+    "feature_flag": {
+      "is_public_server": false,
+      "avoid_relay_data": false,
+      "kcp_input": true,
+      "no_relay_kcp": false,
+      "support_conn_list_sync": true,
+      "quic_input": true,
+      "no_relay_quic": false,
+      "is_credential_peer": false,
+      "need_p2p": true,
+      "disable_p2p": false,
+      "ipv6_public_addr_provider": false
+    },
+    "ip_list": {
+      "public_ipv4": {
+        "addr": 3083012490
+      },
+      "interface_ipv4s": [
+        {
+          "addr": 2852027081
+        },
+        {
+          "addr": 3232249857
+        },
+        {
+          "addr": 2852030496
+        },
+        {
+          "addr": 2852020033
+        },
+        {
+          "addr": 2852034879
+        },
+        {
+          "addr": 2852017360
+        },
+        {
+          "addr": 3232283649
+        },
+        {
+          "addr": 3232253441
+        },
+        {
+          "addr": 3232235627
+        },
+        {
+          "addr": 2852014563
+        }
+      ],
+      "public_ipv6": null,
+      "interface_ipv6s": [],
+      "listeners": []
+    },
+    "public_ipv6_addr": null,
+    "ipv6_public_addr_prefix": null
+  },
+  "port_forwards": [],
+  "log": null
+}

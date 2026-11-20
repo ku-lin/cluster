@@ -1,0 +1,4 @@
+{
+  "verify": "win.crt: OK",
+  "san": "DNS:DESKTOP-PD3AE9A, DNS:localhost, IP Address:127.0.0.1, IP Address:10.14.14.1, IP Address:192.168.70.1"
+}

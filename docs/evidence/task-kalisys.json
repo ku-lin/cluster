@@ -1,0 +1,39 @@
+{
+  "id": "t-565dc415",
+  "status": "done",
+  "required_caps": {
+    "cap_ids": [
+      "skill:kalisys@1.0.0"
+    ]
+  },
+  "input": {
+    "text": "hello from windows"
+  },
+  "timeout": 20.0,
+  "created": 1795174224.4647608,
+  "updated": 1795174224.6265495,
+  "node_id": "kali-node",
+  "worker_id": "w-f1969223",
+  "output": {
+    "host": "kali",
+    "os": "Linux",
+    "release": "7.2.15+kali-amd64",
+    "machine": "x86_64",
+    "python": "3.13.12",
+    "pid": 7157,
+    "ts": 1795174224.6057613
+  },
+  "error": null,
+  "reason": null,
+  "submitted_by": "orchestrator",
+  "parent": null,
+  "result_log": [
+    {
+      "ts": 1795174224.6265523,
+      "node_id": "kali-node",
+      "status": "done"
+    }
+  ],
+  "cap_id": "skill:kalisys@1.0.0",
+  "elapsed_ms": 24.3
+}

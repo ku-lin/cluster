@@ -1,0 +1,4 @@
+[
+  {"cidr": "10.14.14.2/24", "ipv4": "10.14.14.2", "hostname": "kali", "cost": "Local", "lat_ms": "-", "loss_rate": "-", "tunnel_proto": "-", "nat_type": "PortRestricted", "id": "3118686767", "version": "2.6.4-8428a89d"},
+  {"cidr": "10.14.14.1/24", "ipv4": "10.14.14.1", "hostname": "DESKTOP-PD3AE9A", "cost": "p2p", "lat_ms": "0.47", "loss_rate": "0.0%", "rx_bytes": "340.98 kB", "tx_bytes": "350.91 kB", "tunnel_proto": "tcp", "nat_type": "PortRestricted", "id": "1368333948", "version": "2.6.4-8428a89d"}
+]

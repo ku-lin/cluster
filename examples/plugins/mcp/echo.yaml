@@ -1,0 +1,12 @@
+# 示例 MCP 插件：通过 stdio 启动 examples/mcp_echo_server.py
+# 路径相对 repo 根目录（Agent 在本目录启动）
+name: echo
+version: "1.0.0"
+description: 示例 MCP server（echo / add）
+command: ["python", "examples/mcp_echo_server.py"]
+tags: ["demo", "mcp"]
+cost_model:
+  est_cpu_ms: 10
+  est_mem_mb: 48
+requirements:
+  os: ["windows", "linux"]
