@@ -3,6 +3,12 @@
 本仓库的版本号按 [SemVer](https://semver.org/lang/zh-CN/) 解释：`vX.Y.Z` 是**仓库**的发布版本；
 `dsh-plugin/package.json` 的版本是**插件包自身**的版本，二者独立维护（首次发布时一一对应）。
 
+## Unreleased（2026-11-20）— Notice
+
+**README 标注「暂时不能使用」。** 仓库根 `README.md` 与 `dsh-plugin/README.md` 顶部已加警告块，
+原因：项目仍在开发中，DSH 插件、Router 会话与工作区同步的接口/配置仍在快速变动，可能无通知变更。
+本次只改文档，不动代码；不新建 tag，不改 Release。
+
 ## v1.0.0 — 2026-11-20
 
 **首个公开版本：core 与 `dsh-cluster-ui 1.0.0` 一并首发。**

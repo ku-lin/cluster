@@ -1,3 +1,7 @@
+> [!WARNING]
+> **暂时不能使用（2026-11-20）**：插件仍处开发中，UI 落点、代理接口与配置项都可能随时变动，
+> 请勿在生产或比赛环境直接依赖；试用请固定到 `v1.0.0` 对应的 tag。
+
 # dsh-cluster-ui — DeepSeek Harness 里的 cluster 前端
 
 把 [cluster](https://github.com/ku-lin/cluster)（多机 Agent 集群）的**主机状态、agent、Router 对话、工作区同步**搬进 DSH 界面。
