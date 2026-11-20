@@ -39,6 +39,15 @@ def _tls(args) -> TLSOptions | None:
     )
 
 
+def _utf8_console() -> None:
+    """Windows 控制台默认不是 UTF-8，中文/符号会抛 UnicodeEncodeError。"""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 def _print(obj) -> None:
     print(json.dumps(obj, ensure_ascii=False, indent=2, default=str))
 
@@ -446,6 +455,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _utf8_console()
     args = build_parser().parse_args(argv)
     return int(args.func(args) or 0)
 

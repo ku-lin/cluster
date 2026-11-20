@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+env:
+  # Windows 控制台默认 cp1252，项目输出含中文
+  PYTHONIOENCODING: utf-8
+  PYTHONUTF8: '1'
+
 jobs:
   test:
     name: ${{ matrix.os }} / py${{ matrix.python }}
