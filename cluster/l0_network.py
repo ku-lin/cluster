@@ -19,6 +19,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from . import winproc
+
 EASYTIER_VERSION = "2.6.4"
 DEFAULT_PORT = 11010
 
@@ -149,14 +151,14 @@ class Mesh:
             for name in ("DETACHED_PROCESS", "CREATE_NEW_PROCESS_GROUP", "CREATE_BREAKAWAY_FROM_JOB"):
                 flags |= int(getattr(subprocess, name, 0))
             try:
-                self.proc = subprocess.Popen([str(self.core), "-c", str(config_path)], creationflags=flags, **kwargs)
+                self.proc = subprocess.Popen([str(self.core), "-c", str(config_path)], **winproc.hidden_kwargs(flags=flags), **kwargs)
             except OSError:  # 不允许 breakaway 时退回普通分离进程
                 fallback = int(getattr(subprocess, "DETACHED_PROCESS", 0)) | int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
-                self.proc = subprocess.Popen([str(self.core), "-c", str(config_path)], creationflags=fallback, **kwargs)
+                self.proc = subprocess.Popen([str(self.core), "-c", str(config_path)], **winproc.hidden_kwargs(flags=fallback), **kwargs)
         elif detached:
             self.proc = subprocess.Popen([str(self.core), "-c", str(config_path)], start_new_session=True, **kwargs)
         else:
-            self.proc = subprocess.Popen([str(self.core), "-c", str(config_path)], **kwargs)
+            self.proc = subprocess.Popen([str(self.core), "-c", str(config_path)], **winproc.hidden_kwargs(), **kwargs)
 
     def stop(self) -> None:
         if self.proc is not None and self.proc.poll() is None:
@@ -176,6 +178,7 @@ class Mesh:
             timeout=timeout,
             encoding="utf-8",
             errors="replace",
+            **winproc.hidden_kwargs(),
         )
         if proc.returncode != 0:
             raise RuntimeError((proc.stderr or proc.stdout).strip()[:400])

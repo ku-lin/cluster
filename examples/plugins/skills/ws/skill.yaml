@@ -1,0 +1,33 @@
+# 工作区文件代理：cluster 工作区同步（UI 网关）在节点侧的执行器。
+#
+# 它只做三件事：列出目录清单（manifest）、读一个文件（read）、原子写一个文件（write）。
+# 真正的合并策略、冲突判定、重试都在网关侧（cluster/wssync.py），节点侧保持无状态。
+#
+# 允许访问的根目录（防目录穿越）：
+#   CLUSTER_WS_ROOTS 环境变量（os.pathsep 分隔）> 默认 [home, tempdir, 仓库根]
+# 所以 `<repo>/.state/workspaces/*` 与对端声明的 `~/cluster-test/workspaces/*`
+# 都在默认允许范围内，不需要重启 Agent 去加环境变量。
+name: ws
+version: "1.0.0"
+description: 工作区文件代理：manifest / read / write（cluster 工作区同步用）
+command: ["python", "run.py"]
+tags: ["workspace", "sync", "files"]
+cost_model:
+  est_cpu_ms: 8
+  est_mem_mb: 24
+requirements:
+  os: ["windows", "linux"]
+input_schema:
+  type: object
+  properties:
+    op:
+      type: string
+    root:
+      type: string
+    path:
+      type: string
+    data_b64:
+      type: string
+    sha256:
+      type: string
+  required: ["op"]

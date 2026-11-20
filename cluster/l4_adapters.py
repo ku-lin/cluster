@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from . import httpjson
+from . import httpjson, winproc
 from .l3_capability import Capability
 
 TEXT_SUFFIXES = {".yaml", ".yml", ".json"}
@@ -226,6 +226,7 @@ class SkillAdapter(Adapter):
                 cwd=str(Path(self.source).parent) if self.source else None,
                 encoding="utf-8",
                 errors="replace",
+                **winproc.hidden_kwargs(),
             )
         except subprocess.TimeoutExpired:
             return {"ok": False, "output": None, "error": f"timeout after {timeout}s", "elapsed_ms": (time.time() - started) * 1000}
@@ -309,6 +310,7 @@ class McpAdapter(Adapter):
             encoding="utf-8",
             errors="replace",
             bufsize=1,
+            **winproc.hidden_kwargs(),
         )
 
         def reader() -> None:

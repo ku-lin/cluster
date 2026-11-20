@@ -4,6 +4,8 @@
 
 这不是一个"多机终端"玩具：节点注册、能力注册、任务认领、准入控制、指标采集、mTLS 双向认证都是真的在跑，两台机器之间是真的在互相调任务。
 
+**当前版本 `v1.0.0`**：core（L0–L5 + L6 工作区同步/UI 网关）与 DeepSeek Harness 插件 `dsh-cluster-ui 1.0.0` 一并首发，变更见 [CHANGELOG.md](CHANGELOG.md)，发布见 [Releases](https://github.com/ku-lin/cluster/releases)。
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ L5 编排   Orchestrator / 子智能体准入                     │  只读 Capacity，不认插件类型
@@ -24,7 +26,7 @@
 
 ```bash
 python -m cluster selfcheck          # 9 项内置断言：CAS/准入/mTLS/端到端
-python -m unittest discover -s tests # 30 个单元与集成测试
+python -m unittest discover -s tests # 37 个单元与集成测试
 python -m cluster demo               # 起 1 控制面 + 1 Agent，跑一个真实任务
 ```
 
@@ -137,6 +139,32 @@ orch.maybe_spawn_subagent({"cap_ids": ["skill:upper@1.0.0"]}, {"text": "hi"}, he
 
 `headroom=0.2` 表示要求比阈值再多 20% 空闲；容量查询基于所有节点的实时指标 + 能力匹配。
 
+### L6：工作区同步（每台机器一个目录，内容保持一致）
+
+集群里"共享工作区"的最小可用实现：**节点侧无状态，合并与重试全在网关侧**。
+
+- 节点侧能力 `skill:ws@1.0.0`（`examples/plugins/skills/ws/`）：`manifest`（path/size/sha256/mtime）、`read`、`write`（临时文件 + fsync + 原子 rename）。只允许在 `CLUSTER_WS_ROOTS` / home / 临时目录 / 仓库根之内操作。
+- 网关侧 `cluster/wssync.py`：并发取各节点清单 → 逐文件比对 → 冲突按 `newest`（最大 mtime）或 `prefer:<node>` 裁决 → 只搬差异（一次 read + N 次 write）→ 失败项逐项可重试（`attempt+1`，`retried` 计数）。
+- 对照数据：两台机器同一个工作区里，`README.md` 在 Kali 侧被追加后同步，Windows 侧 sha256 变为 `3352ae25…`（冲突被记录、按 newest 裁决、字节真的过去了）。
+
+```bash
+# 网关（回环明文，给前端用；控制面依旧 mTLS，不用改一行）
+python -m cluster ui --control https://127.0.0.1:18100 --tls-dir .state/tls --cert-name win --port 18150
+```
+
+### L6.5：DSH 前端（`dsh-plugin/`）
+
+DeepSeek Harness 插件 `dsh-cluster-ui`：设置页「Cluster」+ 侧边栏/主面板「Cluster」+ 顶部 Router 对话框
+（深色板 + 琥珀描边，明显区别于普通会话）+ 工作区同步状态页（逐节点/逐文件结果、冲突、重试）。
+浏览器只与 DSH 同源通信，token 与 mTLS 证书都留在服务端。详见 [dsh-plugin/README.md](dsh-plugin/README.md)。
+
+```bash
+# 典型用法：给所有节点下发一次真实任务并逐节点回显
+all skill:uppercase@1.0.0 {"text":"from the GUI"}
+# -> ✓ kali-node: {"upper": "FROM THE GUI", "length": 12}
+# -> ✓ win-node : {"upper": "FROM THE GUI", "length": 12}
+```
+
 ## 安全边界与已知限制（重要，别跳过）
 
 1. **Windows 非管理员不能建 TUN**：Wintun 适配器创建会失败（`Failed to create adapter`），防火墙加白也报 0x80070005。本项目因此默认 `--no-tun --use-smoltcp`：
@@ -146,7 +174,7 @@ orch.maybe_spawn_subagent({"cap_ids": ["skill:upper@1.0.0"]}, {"text": "hi"}, he
 2. **port-forward 在本机实测会让 easytier-core 退出**：no-tun 节点加 `port_forward` 规则后进程直接结束，故 `scripts/l0-win.ps1` **默认不建转发**（`-WithForwards` 才开），Windows→Kali 改走 underlay 地址；Agent 注册的是**多地址列表**（mesh IP + underlay IP），Router 逐个探测并缓存可用地址。
 3. **quorum 与副本数**：2 个副本时 quorum=2，任一副本不可达就无法认领新任务（会排队）。生产建议 3 个控制面副本（quorum=2，容忍 1 台挂）。
 4. **worker 是线程级隔离**，不是容器。要强隔离请把 `worker_mgr` 换成 Docker/WSL2/Job Object（接口已留）。
-5. **共享工作区没有内置实现**：设计建议是代码用 Git worktree 隔离、产物用 SMB/SeaweedFS；本项目只做了任务级隔离（每个任务独立输入输出，不共享可变状态）。
+5. **共享工作区**（L6）只同步"新增/更新"，**不传播删除**；冲突策略只有 `newest` / `prefer:<node>`，没有三方合并；单文件读上限 2MB。要 Git worktree 级别隔离仍需自己接。
 6. **进程存活**：`scripts/node-win.ps1` 用 `scripts/start_bg.py`（DETACHED_PROCESS + breakaway）拉起服务；但在"被自动化工具托管"的控制台里，EasyTier 仍可能被上游作业回收。**最稳的是在普通终端窗口里手工跑 `scripts\l0-win.ps1`**，或提权后注册为 Windows 服务。
 7. **Kali 复用**：验证只用 `~/cluster-test/cluster-app`，没有碰机器上正在跑的 7890/12800/9020/12802。
 8. **凭据**：`.state/tls/ca.key` 与各节点私钥在 `.gitignore` 里，不入库；仓库内只有代码、示例和脱敏证据。
@@ -162,6 +190,8 @@ cluster/
 │   ├── l3_capability.py     # CapabilityDescriptor + 匹配
 │   ├── l4_adapters.py       # MCP / Skill / API 适配器 + YAML 子集解析
 │   ├── l5_orchestrator.py   # 提交/等待/容量判断/开子智能体
+│   ├── ui_api.py            # L6 UI 网关（回环 HTTP + token，给 DSH 插件用）
+│   ├── wssync.py            # L6 工作区同步：清单比对/冲突裁决/复制/重试
 │   ├── policy.py            # 准入策略与打分
 │   ├── metrics.py           # 跨平台指标（ctypes / /proc）
 │   ├── mtls.py              # 自签 CA + 节点证书（openssl）
@@ -173,8 +203,9 @@ cluster/
 │   ├── node-win.ps1 / node-kali.sh # 控制面 + Agent（一条命令）
 │   └── start_bg.py                 # 真正脱离控制台的后台启动
 ├── dashboard/index.html      # 单文件实时面板（/ 直接打开）
-├── examples/plugins/         # mcp/ skill/ api/ 三种示例插件
-├── tests/                    # 30 个 unittest
+├── examples/plugins/         # mcp/ skill/ api/ 三种示例插件（含 skills/ws：工作区同步执行器）
+├── dsh-plugin/               # DeepSeek Harness 前端插件（设置页/主面板/Router 对话框/同步页）
+├── tests/                    # 37 个 unittest
 └── docs/                     # 设计说明与证据
 ```
 
@@ -185,6 +216,7 @@ cluster net fetch|init|up|status|forward|frp       L0
 cluster certs init|issue|verify                    mTLS
 cluster control|agent                              L2 / L1
 cluster submit|status|caps                         L5
+cluster ui                                          L6 UI 网关（给 DSH 插件用）
 cluster demo|selfcheck                             演示与自检
 ```
 
@@ -194,7 +226,7 @@ cluster demo|selfcheck                             演示与自检
 
 - TUN 模式（需管理员）：拿到完整 mesh 路由后，`[[peer]]` 可写 mesh IP，port-forward 也不再需要；
 - worker 容器化（Docker / WSL2 / Job Object）+ 每个 worker 的资源配额；
-- 共享工作区的 Git worktree 隔离；
+- 共享工作区的 Git worktree 隔离（当前的 L6 是"目录内容一致"，不是"每个任务独立分支"）；
 - Watchdog：行为级检查 worker 是否卡死/跑偏（资源级已由准入覆盖）；
 - MCP 的 resources/prompts/采样能力（当前只实现 tools）。
 

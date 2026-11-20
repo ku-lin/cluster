@@ -15,6 +15,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from . import winproc
+
 _WIN_OPENSSL = [
     r"C:\Program Files\OpenSSL-Win64\bin\openssl.exe",
     r"C:\Program Files\Git\usr\bin\openssl.exe",
@@ -40,6 +42,7 @@ def _run(args: list[str], cwd: Path) -> str:
         text=True,
         encoding="utf-8",
         errors="replace",
+        **winproc.hidden_kwargs(),
     )
     if proc.returncode != 0:
         raise RuntimeError(f"openssl {' '.join(args)} 失败: {(proc.stderr or proc.stdout).strip()[:500]}")

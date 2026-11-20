@@ -4,6 +4,24 @@
 *.log
 *.pid
 
+# 证书与私钥（mTLS / openssl 产物，只留在本机 .state/tls）
+*.key
+*.pem
+*.crt
+*.csr
+*.p12
+*.pfx
+*.cer
+*.jks
+*.kdbx
+
+# 临时文件与构建产物
+*.tmp
+*.bak
+*.bak-*
+build/
+dist/
+
 # Python
 __pycache__/
 *.py[cod]
@@ -11,6 +29,10 @@ __pycache__/
 .pytest_cache/
 .venv/
 venv/
+
+# Node / DSH 插件
+node_modules/
+dsh-plugin/node_modules/
 
 # 编辑器 / 系统
 .vscode/

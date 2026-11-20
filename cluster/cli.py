@@ -13,7 +13,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-from . import httpjson, l0_network, mtls
+from . import httpjson, l0_network, mtls, winproc
 from .httpjson import TLSOptions
 from .l1_agent import Agent
 from .l2_control import ControlNode
@@ -224,6 +224,34 @@ def cmd_agent(args) -> int:
         return 0
 
 
+# ---------------------------------------------------------------- UI 网关
+def cmd_ui(args) -> int:
+    """L6：给前端（DSH 插件）用的回环 REST 网关，控制面/节点都不需要改。"""
+    from .ui_api import UiGateway
+
+    tls = _tls(args)
+    gateway = UiGateway(
+        control=args.control,
+        tls=tls,
+        token=args.token,
+        host=args.host,
+        port=args.port,
+        state_dir=args.state_dir,
+        win_root_base=args.win_root_base,
+        linux_root_base=args.linux_root_base,
+        wait_seconds=args.wait,
+        allow_origins=args.allow_origin or None,
+    ).start()
+    print(f"[ui] token file: {Path(args.state_dir) / 'token'}")
+    print(f"[ui] health: http://{args.host}:{gateway.port}/api/health")
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        gateway.stop()
+        return 0
+
+
 # ---------------------------------------------------------------- 任务
 def cmd_submit(args) -> int:
     orch = Orchestrator(args.control, tls=_tls(args), token=args.token)
@@ -316,7 +344,11 @@ def cmd_selfcheck(args) -> int:
     if not ok:
         return 1
     if args.with_unittest:
-        proc = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"], cwd=str(ROOT))
+        proc = subprocess.run(
+            [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"],
+            cwd=str(ROOT),
+            **winproc.hidden_kwargs(),
+        )
         return proc.returncode
     return 0
 
@@ -414,6 +446,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--advertise", action="append", help="额外可达地址（如 underlay IP），可多次给")
     p.add_argument("--policy")
     p.set_defaults(func=cmd_agent)
+
+    p = sub.add_parser("ui", help="L6 前端网关（回环 HTTP，给 DSH 插件用）")
+    p.add_argument("--control", required=True, help="控制面 URL，如 https://127.0.0.1:18100")
+    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--port", type=int, default=18150)
+    p.add_argument("--state-dir", default=str(STATE / "ui"))
+    p.add_argument("--win-root-base", default=str(STATE / "workspaces"))
+    p.add_argument("--linux-root-base", default="~/cluster-test/workspaces")
+    p.add_argument("--wait", type=float, default=8.0, help="Router 对话里等任务结束的秒数")
+    p.add_argument("--allow-origin", action="append", help="额外允许的浏览器 Origin")
+    p.add_argument("--tls-dir")
+    p.add_argument("--cert-name")
+    p.add_argument("--token")
+    p.set_defaults(func=cmd_ui)
 
     p = sub.add_parser("submit", help="提交任务")
     p.add_argument("--control", required=True)

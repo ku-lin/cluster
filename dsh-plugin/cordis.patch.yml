@@ -1,0 +1,18 @@
+# 把 cluster 前端挂进 DSH（bundle 层）
+#
+# 这个文件让 `dsh plugin add <本目录>`（或任何按 bundle 安装的流程）自动插入插件行。
+# 也可以不用它，直接在 profile 的 cordis.patch.yml 里手写同样的 insert 行；两者等价，二选一。
+#
+# token 从哪来（按优先级）：
+#   1. config.token            —— 明文写在这里（不推荐，仓库里别写）
+#   2. 环境变量 CLUSTER_UI_TOKEN
+#   3. config.tokenFile
+#   4. 环境变量 CLUSTER_UI_TOKEN_FILE
+# 网关首次启动会生成 `<cluster 仓库>/.state/ui/token`（32 字节 hex，权限 0600），把 tokenFile 指过去即可。
+- insert:
+    - id: dsh-cluster-ui
+      name: dsh-cluster-ui
+      config:
+        gatewayUrl: http://127.0.0.1:18150
+        # tokenFile: /path/to/cluster/.state/ui/token   # 或设 CLUSTER_UI_TOKEN_FILE
+        timeoutMs: 20000
