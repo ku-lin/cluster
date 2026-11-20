@@ -107,7 +107,20 @@ def parse_yaml(text: str) -> Any:
             if is_list:
                 if not content.startswith("- "):
                     break
-                container.append(_scalar(content[2:]))
+                item = content[2:].strip()
+                if ":" in item and not item.startswith(("[", "{")):
+                    # 列表里的映射项："- name: echo" + 后续缩进更深的行
+                    first_indent = cur_indent + 2
+                    sub: list[tuple[int, str]] = [(first_indent, item)]
+                    j = i + 1
+                    while j < len(rows) and rows[j][0] > cur_indent:
+                        sub.append(rows[j])
+                        j += 1
+                    value, _ = build(sub, 0, first_indent)
+                    container.append(value)
+                    i = j
+                    continue
+                container.append(_scalar(item))
                 i += 1
                 continue
             if ":" not in content:
@@ -370,9 +383,18 @@ class McpAdapter(Adapter):
                 return msg.get("result", {})
 
     def describe(self) -> list[Capability]:
-        self._ensure()
+        """能力清单优先从 plugin 清单（tools:）读，不启动子进程。
+
+        说明：Windows CI 上实测 `describe()` 里现拉 MCP 子进程会偶发 tools/list 超时
+        （stdio 管道时序问题），而注册阶段本来也不需要真连 server——清单在 yaml 里
+        声明即可；没声明时才回退去问 server。
+        """
+        tools = self.spec.get("tools")
+        if not tools:
+            self._ensure()
+            tools = self._tools
         caps: list[Capability] = []
-        for tool in self._tools:
+        for tool in tools:
             name = str(tool.get("name", "tool"))
             cap = self._base_cap(name, str(tool.get("description") or ""))
             cap.input_schema = tool.get("inputSchema", {}) or {}

@@ -1,12 +1,35 @@
 # 示例 MCP 插件：通过 stdio 启动 examples/mcp_echo_server.py
-# 路径相对 repo 根目录（Agent 在本目录启动）
+#
+# tools 是对外声明的能力清单（L3 注册时直接读它，不启动子进程）；
+# 真正 invoke 时才拉起 server 做 tools/call。不写 tools 也可以，
+# 那就回退成"注册时连一次 server 问 tools/list"。
 name: echo
 version: "1.0.0"
 description: 示例 MCP server（echo / add）
 command: ["python", "examples/mcp_echo_server.py"]
+startup_timeout: 30
 tags: ["demo", "mcp"]
 cost_model:
   est_cpu_ms: 10
   est_mem_mb: 48
 requirements:
   os: ["windows", "linux"]
+tools:
+  - name: echo
+    description: 原样返回 text
+    input_schema:
+      type: object
+      properties:
+        text:
+          type: string
+      required: ["text"]
+  - name: add
+    description: 把 a 和 b 相加
+    input_schema:
+      type: object
+      properties:
+        a:
+          type: number
+        b:
+          type: number
+      required: ["a", "b"]
