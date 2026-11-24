@@ -34,6 +34,10 @@ venv/
 node_modules/
 dsh-plugin/node_modules/
 
+# UI 预览环境的中间产物（React UMD 解包、baseline 快照、临时 Chrome profile）
+# 取证用的截图在 docs/evidence/ 下，是会提交的。
+.cache/ui-harness/
+
 # 编辑器 / 系统
 .vscode/
 .idea/

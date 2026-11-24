@@ -121,152 +121,433 @@ function mergeHistory(serverRows, localRows) {
 /* ------------------------------------------------------------------ 样式 */
 const STYLE_ID = 'dsh-cluster-ui-style'
 const CSS = `
-.dcu-root { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); }
-.dcu-head { display: flex; align-items: center; gap: 10px; padding: 14px 18px 10px; }
-.dcu-title { font-size: 15px; font-weight: 600; letter-spacing: .2px; }
-.dcu-sub { font-size: 12px; color: var(--dsw-alias-label-tertiary); }
+/* ------------------------------------------------------------------ 局部令牌
+   面板自己的一套 token，而不是直接用主题的 bg-layer-1/2/3。
+
+   原因很具体：浅色主题把 bg-base 与 bg-layer-1/2/3 全映射到同一个 #fff，卡片和
+   页面同色，只能靠 0.5px 细线分家——那不叫克制，叫平。这里显式定义「页面底色 /
+   卡面 / 描边 / 阴影」四件套，浅色下用 bluish-50 托住页面、白卡浮在上面，暗色下
+   沿用主题的 #151517 / #232324 这对已成立的层次。
+
+   阴影而不是更粗的描边：这个面板一屏里最多十几张卡，靠加深描边会变成表格线。
+   var(--x, fallback) 兜住主题没给静态色板的情况，取不到就退回 bg-base。 */
+.dcu-root,
+.dcu-settings {
+  --dcu-page: var(--dsw-static-neutral-bluish-50, var(--dsw-alias-bg-base));
+  --dcu-surface: var(--dsw-alias-bg-layer-1);
+  --dcu-line: var(--dsw-alias-border-l3);
+  --dcu-line-soft: var(--dsw-alias-border-l2);
+  --dcu-cpu: #3d7bfd;
+  --dcu-mem: #d98a2b;
+  --dcu-r-lg: 18px;
+  --dcu-r-md: 12px;
+  --dcu-r-sm: 9px;
+  --dcu-elev: 0 1px 1px rgba(16, 24, 40, .03), 0 10px 28px -18px rgba(16, 24, 40, .22);
+}
+/* 设置页不是 .dcu-root 的后代（它挂在 DSH 设置页的 slot 里），所以上面那组 token
+   必须同样定义在 .dcu-settings 上——否则设置页里的卡片拿不到 --dcu-line，描边整体
+   消失，看上去就像样式没生效。
+
+   而且**光定义不消费等于没定义**：这里必须真的把 --dcu-page 铺到 .dcu-settings 的
+   background 上，浅色下才是"浅灰页面托底 + 白卡浮起"。只写变量不写 background 的话，
+   设置页背景仍是透明的、透出 host 的 #fff，卡片和页面又变回同色。 */
+.dcu-settings {
+  background: var(--dcu-page);
+  color: var(--dsw-alias-label-primary);
+  /* 负边距 + 内边距：把设置页区域铺满 slot 给出的宽度，让底色一直延伸到边缘。 */
+  padding: 4px 4px 20px;
+  border-radius: var(--dcu-r-md);
+}
+.dcu-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--dcu-page);
+  color: var(--dsw-alias-label-primary);
+}
+body[data-ds-dark-theme] .dcu-root,
+body[data-ds-dark-theme] .dcu-settings {
+  --dcu-page: var(--dsw-alias-bg-base);
+  --dcu-elev: 0 1px 2px rgba(0, 0, 0, .4), 0 14px 34px -20px rgba(0, 0, 0, .7);
+}
+
+/* 面板通用：所有"一张卡"的东西共用同一套描边/圆角/阴影，避免各处半径不一。 */
+.dcu-card,
+.dcu-chart,
+.dcu-run {
+  border: 1px solid var(--dcu-line-soft);
+  border-radius: var(--dcu-r-lg);
+  background: var(--dcu-surface);
+  box-shadow: var(--dcu-elev);
+  min-width: 0;
+}
+
+/* ------------------------------------------------------------------ 标题栏 */
+/* 只有 .dcu-body 该被压缩（它自己 overflow:auto）。标题栏 / Router / 标签页都是
+   固有高度，必须 flex:none —— 否则内容一高，flex 会把它们一起挤扁：Router 的
+   深色块被压到比自己的 header 还矮，右下那颗按钮就戳到卡片外面去了。 */
+/* align-items: baseline 让标题与副标题同一基线；但窄屏下副标题会把刷新按钮挤成竖排
+   （「刷/新」两行，按钮从 34px 变成 54px），所以副标题允许收缩并省略，按钮不许换行。 */
+.dcu-head { display: flex; align-items: baseline; gap: 14px; padding: 26px 32px 16px; flex: none; }
+.dcu-title { font-size: 24px; font-weight: 650; letter-spacing: -.02em; line-height: 1.15; flex: none; }
+.dcu-sub { font-size: 13px; color: var(--dsw-alias-label-tertiary); letter-spacing: .01em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dcu-head .dcu-btn { white-space: nowrap; flex: none; }
 .dcu-spacer { flex: 1 1 auto; }
-.dcu-btn { border: 0.5px solid var(--dsw-alias-border-l3); background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); border-radius: 8px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
-.dcu-btn:hover { background: var(--dsw-alias-interactive-bg-hover); }
-.dcu-btn:disabled { opacity: .5; cursor: default; }
-.dcu-btn.primary { background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); border-color: transparent; }
-.dcu-btn.warn { border-color: #c98b3a; color: #9a6520; }
-.dcu-chip { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 1px 8px; font-size: 11px; border: 0.5px solid var(--dsw-alias-border-l3); color: var(--dsw-alias-label-secondary); white-space: nowrap; }
+
+.dcu-btn {
+  border: 1px solid var(--dcu-line);
+  background: var(--dcu-surface);
+  color: var(--dsw-alias-label-primary);
+  border-radius: var(--dcu-r-sm);
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+.dcu-btn:hover { background: var(--dsw-alias-interactive-bg-hover); border-color: var(--dsw-alias-border-l4); }
+.dcu-btn:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
+.dcu-btn:disabled { opacity: .45; cursor: default; }
+.dcu-btn.primary { background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); border-color: transparent; font-weight: 600; }
+.dcu-btn.warn { border-color: #d99a49; color: #94580f; }
+body[data-ds-dark-theme] .dcu-btn.warn { color: #f0c07a; }
+
+.dcu-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 11.5px;
+  border: 1px solid var(--dcu-line-soft);
+  background: var(--dcu-page);
+  color: var(--dsw-alias-label-secondary);
+  white-space: nowrap;
+}
 .dcu-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
 .dcu-dot.ok { background: var(--dsw-alias-state-success-primary); }
 .dcu-dot.warn { background: var(--dsw-alias-state-warn-primary); }
 .dcu-dot.bad { background: var(--dsw-alias-state-error-primary); }
 .dcu-dot.busy { background: var(--dsw-alias-brand-primary); }
-.dcu-tabs { display: flex; gap: 4px; padding: 0 18px; border-bottom: 0.5px solid var(--dsw-alias-border-l2); }
-.dcu-tab { border: 0; background: transparent; color: var(--dsw-alias-label-tertiary); padding: 7px 10px; font-size: 13px; cursor: pointer; border-bottom: 2px solid transparent; }
-.dcu-tab[data-active="true"] { color: var(--dsw-alias-label-primary); border-bottom-color: var(--dsw-alias-brand-primary); }
-.dcu-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 14px 18px 22px; display: flex; flex-direction: column; gap: 12px; }
-.dcu-error { border: 0.5px solid var(--dsw-alias-state-error-primary); color: var(--dsw-alias-state-error-primary); border-radius: 10px; padding: 8px 10px; font-size: 12px; }
+
+/* 标签页：下拉线只到 1px，选中项用主色 + 字重区分，不用填充块（填充块会和卡片抢重量）。 */
+.dcu-tabs { display: flex; gap: 4px; padding: 0 32px; border-bottom: 1px solid var(--dcu-line-soft); flex: none; }
+.dcu-tab {
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  padding: 11px 15px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color .15s ease, border-color .15s ease;
+}
+.dcu-tab:hover { color: var(--dsw-alias-label-secondary); }
+.dcu-tab[data-active="true"] { color: var(--dsw-alias-label-primary); border-bottom-color: var(--dsw-alias-brand-primary); font-weight: 600; }
+
+/* 内容区：宽屏留白跟着走，但给一个上限——1440 以上再拉宽，行长会失控。 */
+.dcu-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px 32px 44px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 1480px;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+.dcu-error { border: 1px solid var(--dsw-alias-state-error-primary); color: var(--dsw-alias-state-error-primary); border-radius: var(--dcu-r-md); padding: 10px 14px; font-size: 12.5px; }
+/* 错误块在浅色面板上要有一层底才不至于"悬空"；但在 Router 的深色板里必须**不要**
+   浅色底——否则深棕底上会拍出一整块白板，和"深色板刻意与普通会话拉开距离"的意图相反。 */
+.dcu-overview > .dcu-error,
+.dcu-run > .dcu-error,
+.dcu-settings > .dcu-error { background: var(--dcu-surface); }
+.dcu-router .dcu-error {
+  background: rgba(236, 19, 19, .14);
+  border-color: rgba(242, 90, 90, .7);
+  color: #ffb3b3;
+  margin: 0 14px 10px;
+}
 .dcu-summary { display: flex; flex-wrap: wrap; gap: 8px; }
 
-/* 首屏：健康总览条 */
-.dcu-strip { display: flex; flex-wrap: wrap; gap: 6px; border: 0.5px solid var(--dsw-alias-border-l3); background: var(--dsw-alias-bg-layer-1); border-radius: 12px; padding: 8px 10px; }
-.dcu-stat { display: flex; align-items: center; gap: 6px; padding: 3px 10px 3px 8px; border-radius: 9px; min-width: 0; }
-.dcu-stat + .dcu-stat { border-left: 0.5px solid var(--dsw-alias-border-l2); }
-.dcu-stat-label { font-size: 11px; color: var(--dsw-alias-label-tertiary); }
-.dcu-stat-value { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.dcu-stat-note { font-size: 11px; color: var(--dsw-alias-label-tertiary); margin-left: 2px; }
+/* ------------------------------------------------------------------ 首屏：健康总览
+   五格等宽。数字给到 30px：这一屏的主角是「2/2、2/2、1、完成、42ms」这几个数，
+   不是卡片边框。
 
-/* 首屏：图表 */
-.dcu-charts { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 12px; }
-@media (max-width: 900px) { .dcu-charts { grid-template-columns: 1fr; } }
-.dcu-chart { border: 0.5px solid var(--dsw-alias-border-l3); border-radius: 14px; background: var(--dsw-alias-bg-layer-1); padding: 11px 14px 12px; display: flex; flex-direction: column; gap: 9px; min-width: 0; }
-.dcu-chart-head { display: flex; align-items: center; gap: 8px; }
-.dcu-chart-title { font-size: 12.5px; font-weight: 600; }
-.dcu-legend { display: flex; gap: 10px; font-size: 11px; color: var(--dsw-alias-label-tertiary); align-items: center; }
-.dcu-legend-swatch { width: 10px; height: 2px; border-radius: 2px; display: inline-block; }
-.dcu-spark-row { display: grid; grid-template-columns: 92px minmax(0, 1fr) 96px; gap: 10px; align-items: center; }
-.dcu-spark-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dcu-spark { width: 100%; height: 30px; display: block; }
-.dcu-spark-empty { font-size: 11px; color: var(--dsw-alias-label-tertiary); height: 30px; display: flex; align-items: center; }
-.dcu-spark-vals { font-size: 11px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
-/* 首屏中部：每节点 CPU/内存条形（纯 CSS 宽度编码，不做折线） */
-.dcu-bars { display: flex; flex-direction: column; gap: 10px; }
-.dcu-bar-node { display: grid; grid-template-columns: 88px minmax(0, 1fr) 132px; gap: 10px; align-items: center; }
-.dcu-bar-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dcu-bar-pair { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.dcu-bar { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 8px; align-items: center; }
-.dcu-bar-tag { font-size: 11px; color: var(--dsw-alias-label-tertiary); }
+   布局用**每档断点写死列数的 grid**，不是 flex-wrap：
+   - flex-wrap 换行后末行不足一行的格会被 flex-grow 拉满（719px 下末格 682px，
+     是其它格的两倍），「五格等宽」就不成立了；
+   - 行与行之间没有横线（只有竖线），换行后的行首格还挂着一条 border-left，
+     悬在下一行上面。
+
+   grid 早先用过一版有问题的写法：gap:1px + 容器底色当分隔线，排不满一行时
+   空轨道会露出那片底色，看着像脏块。这次改成 **gap:0、分隔线全部由单元格的
+   border 提供**，空轨道就只是容器自身的背景色（与卡面同色），不会露边。
+
+   边缘那条重复线用 margin: 0 -1px -1px 0 + 容器 overflow:hidden 裁掉：
+   最后一列的 border-right、最后一行的 border-bottom 会被推到 padding box 之外。
+   这样每个断点都不需要写 :nth-child 去特判"末格不要线"。 */
+.dcu-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  border: 1px solid var(--dcu-line-soft);
+  border-radius: var(--dcu-r-lg);
+  box-shadow: var(--dcu-elev);
+  background: var(--dcu-surface);
+  overflow: hidden;
+}
+.dcu-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 17px 22px 19px;
+  background: var(--dcu-surface);
+  min-width: 0;
+  box-sizing: border-box;
+  /* 每格画出右/下两条内线；最外圈的由容器 border 负责，重复的那条被裁掉。 */
+  border-right: 1px solid var(--dcu-line-soft);
+  border-bottom: 1px solid var(--dcu-line-soft);
+  margin: 0 -1px -1px 0;
+}
+.dcu-stat-top { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.dcu-stat-label {
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: .05em;
+  color: var(--dsw-alias-label-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dcu-stat-value {
+  font-size: 30px;
+  font-weight: 620;
+  letter-spacing: -.03em;
+  line-height: 1.02;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+/* 单位/量词跟着数字走，但小一号、次要色：「1 运行」里的「运行」不该和「1」同样重。 */
+.dcu-stat-unit { font-size: 14px; font-weight: 500; letter-spacing: 0; color: var(--dsw-alias-label-tertiary); }
+.dcu-stat-note { font-size: 12px; color: var(--dsw-alias-label-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 列数按断点显式给，不靠 flex 摊平：这样每一行的格宽严格相等，
+   末行不足一行时剩下的空轨道只是容器底色（与卡面同色），不会露出灰块。 */
+@media (max-width: 1180px) {
+  .dcu-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
+  .dcu-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dcu-head { padding: 20px 18px 14px; }
+  .dcu-tabs { padding: 0 18px; }
+  .dcu-body { padding: 18px 18px 32px; gap: 16px; }
+}
+
+/* ------------------------------------------------------------------ 首屏：图表 */
+.dcu-charts { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 20px; }
+@media (max-width: 1080px) { .dcu-charts { grid-template-columns: 1fr; } }
+.dcu-chart { padding: 18px 22px 20px; display: flex; flex-direction: column; gap: 16px; }
+.dcu-chart-head { display: flex; align-items: center; gap: 10px; }
+.dcu-chart-title { font-size: 15px; font-weight: 620; letter-spacing: -.01em; }
+.dcu-chart-foot { font-size: 11.5px; color: var(--dsw-alias-label-tertiary); }
+.dcu-legend { display: flex; gap: 14px; font-size: 12px; color: var(--dsw-alias-label-secondary); align-items: center; }
+.dcu-legend-swatch { width: 12px; height: 3px; border-radius: 2px; display: inline-block; margin-right: 5px; vertical-align: middle; }
+
+.dcu-spark { width: 100%; height: 40px; display: block; }
+.dcu-spark-empty { font-size: 12px; color: var(--dsw-alias-label-tertiary); height: 40px; display: flex; align-items: center; }
+
+/* 每节点 CPU/内存条：轨道从 8px 抬到 10px，数值行给 13px——首屏扫的是"谁吃满了"，
+   细条在 1440 宽的屏上要凑近才看得清刻度差。 */
+.dcu-bars { display: flex; flex-direction: column; gap: 16px; }
+.dcu-bar-node { display: grid; grid-template-columns: 108px minmax(0, 1fr) 158px; gap: 14px; align-items: center; }
+.dcu-bar-name { font-size: 13.5px; font-weight: 560; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dcu-bar-pair { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.dcu-bar { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; align-items: center; }
+.dcu-bar-tag { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--dsw-alias-label-tertiary); }
 /* 轨道用半透明灰而不是主题的 bg-layer-3：主题皮肤（dream skin）会把那层压到和卡片几乎同色，
    轨道看不见时 0% 和"没数据"就分不出来了。 */
-.dcu-bar-track { height: 8px; border-radius: 999px; background: rgba(120, 120, 120, .2); box-shadow: inset 0 0 0 1px rgba(120, 120, 120, .12); overflow: hidden; }
-.dcu-bar-fill { display: block; height: 100%; border-radius: 999px; background: #3d7bfd; transition: width .3s ease; }
+.dcu-bar-track { height: 10px; border-radius: 999px; background: rgba(120, 120, 120, .2); box-shadow: inset 0 0 0 1px rgba(120, 120, 120, .12); overflow: hidden; }
+.dcu-bar-fill { display: block; height: 100%; border-radius: 999px; background: var(--dcu-cpu); transition: width .3s ease; }
 /* CPU 靛蓝 / 内存琥珀是写死的两个色，不跟主题走：图例的小色块用同一对值，
    保证"图例上的颜色"和"条上的颜色"永远一致（主题变量在这套皮肤下两者同色）。 */
-.dcu-bar-fill.mem { background: #d98a2b; }
+.dcu-bar-fill.mem { background: var(--dcu-mem); }
 .dcu-bar-fill.bad { background: var(--dsw-alias-state-error-primary); }
-.dcu-bar-vals { font-size: 11px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
-@media (max-width: 640px) { .dcu-bar-node { grid-template-columns: minmax(0, 1fr); gap: 4px; } .dcu-bar-vals { text-align: left; } }
+.dcu-bar-vals { font-size: 13px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+@media (max-width: 640px) { .dcu-bar-node { grid-template-columns: minmax(0, 1fr); gap: 6px; } .dcu-bar-vals { text-align: left; } }
 @media (prefers-reduced-motion: reduce) { .dcu-bar-fill { transition: none; } }
 
-.dcu-qbar { display: flex; height: 12px; border-radius: 999px; overflow: hidden; background: var(--dsw-alias-bg-layer-3); }
+.dcu-qbar { display: flex; height: 14px; border-radius: 999px; overflow: hidden; background: rgba(120, 120, 120, .18); }
 .dcu-qseg { height: 100%; }
 .dcu-qseg.waiting { background: var(--dsw-alias-state-warn-primary); opacity: .55; }
 .dcu-qseg.running { background: var(--dsw-alias-brand-primary); }
 .dcu-qseg.done { background: var(--dsw-alias-state-success-primary); opacity: .8; }
 .dcu-qseg.failed { background: var(--dsw-alias-state-error-primary); }
 .dcu-qseg.cancelled, .dcu-qseg.unknown { background: var(--dsw-alias-label-tertiary); opacity: .4; }
-.dcu-qkeys { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 11.5px; color: var(--dsw-alias-label-secondary); }
-.dcu-qkey { display: inline-flex; align-items: center; gap: 5px; }
-.dcu-qkey b { font-variant-numeric: tabular-nums; color: var(--dsw-alias-label-primary); }
+.dcu-qkeys { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13px; color: var(--dsw-alias-label-secondary); }
+.dcu-qkey { display: inline-flex; align-items: center; gap: 6px; }
+.dcu-qkey b { font-size: 14px; font-weight: 620; font-variant-numeric: tabular-nums; color: var(--dsw-alias-label-primary); }
 .dcu-qkey .dcu-dot { width: 8px; height: 8px; border-radius: 3px; }
 
-/* 主机卡 */
-.dcu-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
-.dcu-card { border: 0.5px solid var(--dsw-alias-border-l3); border-radius: 14px; padding: 12px 14px; background: var(--dsw-alias-bg-layer-1); display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.dcu-card-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.dcu-node { font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dcu-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; }
-.dcu-meter { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.dcu-meter-head { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--dsw-alias-label-tertiary); }
-.dcu-meter-track { height: 5px; border-radius: 999px; background: var(--dsw-alias-bg-layer-3); overflow: hidden; }
-.dcu-meter-fill { height: 100%; border-radius: 999px; background: var(--dsw-alias-brand-primary); }
+/* ------------------------------------------------------------------ 主机卡 */
+/* align-items:start：让每张卡按自身内容定高。默认的 stretch 会把"没展开明细"
+   的那张拉到和"展开了明细"的一样高，右边留出一大片空白。
+   minmax(360px, 1fr) 在 360–375px 视口下会撑出横向滚动条（卡片 360 宽 > 可用 324–339），
+   所以窄屏用 min() 夹一下：卡片永远不超过可用宽度。 */
+.dcu-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(360px, 100%), 1fr)); gap: 20px; align-items: start; }
+.dcu-card { padding: 18px 20px 16px; display: flex; flex-direction: column; gap: 14px; }
+.dcu-card-head { display: flex; align-items: center; gap: 9px; min-width: 0; flex-wrap: wrap; }
+.dcu-node { font-size: 16px; font-weight: 620; letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dcu-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 20px; }
+.dcu-meter { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.dcu-meter-head { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--dsw-alias-label-tertiary); }
+.dcu-meter-track { height: 6px; border-radius: 999px; background: rgba(120, 120, 120, .2); overflow: hidden; }
+.dcu-meter-fill { height: 100%; border-radius: 999px; background: var(--dcu-cpu); transition: width .3s ease; }
 .dcu-meter-fill.warn { background: var(--dsw-alias-state-warn-primary); }
 .dcu-meter-fill.bad { background: var(--dsw-alias-state-error-primary); }
-.dcu-kv { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
-.dcu-kv b { color: var(--dsw-alias-label-primary); font-weight: 600; }
+.dcu-kv { display: flex; flex-wrap: wrap; gap: 7px 18px; font-size: 12.5px; color: var(--dsw-alias-label-secondary); }
+.dcu-kv b { color: var(--dsw-alias-label-primary); font-weight: 620; font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) { .dcu-meter-fill { transition: none; } }
 
-/* 折叠：明细默认收起 */
-.dcu-fold { border-top: 0.5px dashed var(--dsw-alias-border-l3); padding-top: 8px; }
-.dcu-fold > summary { cursor: pointer; font-size: 11.5px; color: var(--dsw-alias-label-tertiary); list-style: none; display: flex; align-items: center; gap: 6px; }
+/* 统一在这里关掉所有装饰性过渡。
+   为什么集中一条而不是各组件各写一条：之前只有两条进度条被守卫，按钮、标签页、
+   折叠箭头在 reduce 下照样在动；分散写就必然漏。放最后一条，权重够、位置在末尾。 */
+@media (prefers-reduced-motion: reduce) {
+  .dcu-btn,
+  .dcu-tab,
+  .dcu-fold > summary,
+  .dcu-fold > summary::before,
+  .dcu-meter-fill,
+  .dcu-bar-fill {
+    transition: none;
+  }
+}
+
+/* ------------------------------------------------------------------ 折叠：明细默认收起 */
+.dcu-fold { border-top: 1px solid var(--dcu-line-soft); padding-top: 10px; }
+.dcu-fold > summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-tertiary);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 0;
+  transition: color .15s ease;
+}
 .dcu-fold > summary::-webkit-details-marker { display: none; }
 .dcu-fold > summary::before { content: '▸'; font-size: 10px; color: var(--dsw-alias-label-tertiary); transition: transform .12s ease; }
 .dcu-fold[open] > summary::before { transform: rotate(90deg); }
 .dcu-fold > summary:hover { color: var(--dsw-alias-label-secondary); }
-.dcu-agents { display: flex; flex-direction: column; gap: 3px; padding-top: 8px; }
-.dcu-agent { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto auto; gap: 8px; align-items: center; font-size: 12px; }
-.dcu-agent-id { font-family: var(--ds-font-family-code, ui-monospace, SFMono-Regular, Menlo, monospace); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dcu-agents { display: flex; flex-direction: column; gap: 6px; padding-top: 10px; }
+.dcu-agent { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; font-size: 12.5px; }
+.dcu-agent-id { font-family: var(--ds-font-family-code, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dcu-muted { color: var(--dsw-alias-label-tertiary); }
+/* 说明 / 辅助文字只在这两个 class 里定字号，别再写内联 fontSize——
+   内联会盖掉整体排版比例，同一个层级的说明文字会散成 11 / 11.5 / 12 三种。 */
+.dcu-cap { font-size: 11.5px; }
+.dcu-cap-lg { font-size: 12.5px; }
+.dcu-name { font-size: 14px; font-weight: 620; }
+.dcu-conflict { font-size: 12px; }
 
-/* Router 对话框：深色板 + 琥珀描边，刻意和普通会话的浅色输入框拉开距离 */
-.dcu-router { margin: 0 18px 12px; border-radius: 14px; border: 1px solid rgba(201, 139, 58, .75); background: linear-gradient(180deg, #241a11 0%, #161210 100%); color: #f4e8d6; box-shadow: 0 10px 26px rgba(0, 0, 0, .18); display: flex; flex-direction: column; min-height: 0; }
-.dcu-router.collapsed { padding-bottom: 2px; }
-.dcu-router-head { display: flex; align-items: center; gap: 8px; padding: 9px 13px 7px; border-bottom: 1px solid rgba(201, 139, 58, .35); }
-.dcu-router-title { font-size: 12.5px; font-weight: 700; letter-spacing: .6px; color: #f0c07a; text-transform: uppercase; }
-.dcu-router-tag { font-size: 11px; color: rgba(244, 232, 214, .62); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.dcu-router-log { max-height: 158px; overflow: auto; padding: 9px 13px; display: flex; flex-direction: column; gap: 7px; font-size: 12.5px; line-height: 1.5; }
-.dcu-turn { display: flex; flex-direction: column; gap: 3px; }
-.dcu-turn-user { color: #f0c07a; font-weight: 600; }
+/* ------------------------------------------------------------------ Router 对话框
+   深色板 + 琥珀描边，刻意和普通会话的浅色输入框拉开距离。收起时只留一条——
+   它是"输入口"不是"数据"，不该比上面那排状态数字更抢眼。 */
+.dcu-router {
+  margin: 0 32px 16px;
+  border-radius: var(--dcu-r-lg);
+  border: 1px solid rgba(201, 139, 58, .7);
+  background: linear-gradient(180deg, #241a11 0%, #161210 100%);
+  color: #f4e8d6;
+  box-shadow: 0 12px 30px -18px rgba(0, 0, 0, .5);
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  min-height: 0;
+}
+.dcu-router.collapsed { padding-bottom: 0; }
+.dcu-router-head { display: flex; align-items: center; gap: 10px; padding: 11px 18px; border-bottom: 1px solid rgba(201, 139, 58, .35); flex-wrap: wrap; }
+.dcu-router.collapsed .dcu-router-head { border-bottom: 0; }
+.dcu-router-title { font-size: 11.5px; font-weight: 700; letter-spacing: .14em; color: #f0c07a; text-transform: uppercase; white-space: nowrap; }
+/* min-width:0 让 tag 真的能被省略号截断；按钮 white-space:nowrap 免得窄屏下
+   「展开对话」自己折成两行（折了之后按钮高度翻倍，把深色条撑高）。 */
+.dcu-router-tag { font-size: 12.5px; color: rgba(244, 232, 214, .62); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1 1 80px; }
+.dcu-router-head .dcu-btn { white-space: nowrap; flex: none; }
+.dcu-router-log { max-height: 188px; overflow: auto; padding: 14px 18px; display: flex; flex-direction: column; gap: 12px; font-size: 13px; line-height: 1.6; }
+.dcu-turn { display: flex; flex-direction: column; gap: 5px; }
+.dcu-turn-user { color: #f0c07a; font-weight: 620; }
 .dcu-turn-reply { color: #efe4d3; white-space: pre-wrap; word-break: break-word; }
-.dcu-turn-meta { font-size: 11px; color: rgba(244, 232, 214, .5); }
-.dcu-actions { display: flex; flex-wrap: wrap; gap: 5px; }
-.dcu-action { font-family: var(--ds-font-family-code, ui-monospace, monospace); font-size: 11px; border: 1px solid rgba(201, 139, 58, .4); border-radius: 6px; padding: 1px 6px; color: #e8d3b3; }
-.dcu-router-input { display: flex; gap: 8px; padding: 9px 13px 11px; border-top: 1px solid rgba(201, 139, 58, .35); align-items: flex-end; }
-.dcu-router-input textarea { flex: 1 1 auto; resize: none; min-height: 34px; max-height: 96px; border-radius: 9px; border: 1px solid rgba(201, 139, 58, .45); background: rgba(0, 0, 0, .28); color: #f4e8d6; padding: 8px 10px; font-size: 12.5px; font-family: inherit; outline: none; }
+.dcu-turn-meta { font-size: 11.5px; color: rgba(244, 232, 214, .5); }
+.dcu-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.dcu-action { font-family: var(--ds-font-family-code, ui-monospace, monospace); font-size: 11px; border: 1px solid rgba(201, 139, 58, .4); border-radius: 6px; padding: 2px 7px; color: #e8d3b3; }
+.dcu-router-input { display: flex; gap: 10px; padding: 12px 18px 14px; border-top: 1px solid rgba(201, 139, 58, .35); align-items: flex-end; }
+.dcu-router-input textarea { flex: 1 1 auto; resize: none; min-height: 40px; max-height: 120px; border-radius: var(--dcu-r-sm); border: 1px solid rgba(201, 139, 58, .45); background: rgba(0, 0, 0, .28); color: #f4e8d6; padding: 10px 12px; font-size: 13px; font-family: inherit; line-height: 1.5; outline: none; }
+.dcu-router-input textarea:focus { border-color: rgba(240, 192, 122, .8); }
 .dcu-router-input textarea::placeholder { color: rgba(244, 232, 214, .42); }
-.dcu-router-send { border: 1px solid rgba(201, 139, 58, .6); background: rgba(201, 139, 58, .18); color: #f0c07a; border-radius: 9px; padding: 8px 12px; font-size: 12.5px; cursor: pointer; }
+.dcu-router-send { border: 1px solid rgba(201, 139, 58, .6); background: rgba(201, 139, 58, .18); color: #f0c07a; border-radius: var(--dcu-r-sm); padding: 10px 16px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.dcu-router-send:hover:not(:disabled) { background: rgba(201, 139, 58, .28); }
 .dcu-router-send:disabled { opacity: .45; cursor: default; }
-.dcu-hint { padding: 0 13px 9px; font-size: 11px; color: rgba(244, 232, 214, .45); }
-.dcu-run { border: 0.5px solid var(--dsw-alias-border-l3); border-radius: 12px; padding: 11px 13px; display: flex; flex-direction: column; gap: 9px; background: var(--dsw-alias-bg-layer-1); }
-.dcu-run-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.dcu-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.dcu-table th { text-align: left; font-weight: 500; color: var(--dsw-alias-label-tertiary); padding: 4px 6px; border-bottom: 0.5px solid var(--dsw-alias-border-l2); }
-.dcu-table td { padding: 4px 6px; border-bottom: 0.5px solid var(--dsw-alias-border-l2); vertical-align: top; }
+.dcu-hint { padding: 0 18px 12px; font-size: 11.5px; color: rgba(244, 232, 214, .45); }
+@media (max-width: 720px) { .dcu-router { margin: 0 18px 14px; } }
+
+/* ------------------------------------------------------------------ 同步 / 运行记录 */
+.dcu-run { padding: 18px 22px 20px; display: flex; flex-direction: column; gap: 14px; }
+.dcu-run-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.dcu-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.dcu-table th { text-align: left; font-weight: 600; color: var(--dsw-alias-label-tertiary); padding: 8px 10px; border-bottom: 1px solid var(--dcu-line-soft); font-size: 11.5px; letter-spacing: .04em; text-transform: uppercase; }
+.dcu-table td { padding: 8px 10px; border-bottom: 1px solid var(--dcu-line-soft); vertical-align: top; }
+.dcu-table tr:last-child td { border-bottom: 0; }
 .dcu-mono { font-family: var(--ds-font-family-code, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 11.5px; }
-.dcu-badge { border-radius: 6px; padding: 0 6px; font-size: 11px; border: 0.5px solid var(--dsw-alias-border-l3); }
+.dcu-badge { border-radius: 6px; padding: 1px 8px; font-size: 11.5px; font-weight: 500; border: 1px solid var(--dcu-line); white-space: nowrap; }
 .dcu-badge.done { color: var(--dsw-alias-state-success-primary); border-color: var(--dsw-alias-state-success-primary); }
 .dcu-badge.partial, .dcu-badge.conflict { color: var(--dsw-alias-state-warn-primary); border-color: var(--dsw-alias-state-warn-primary); }
 .dcu-badge.failed { color: var(--dsw-alias-state-error-primary); border-color: var(--dsw-alias-state-error-primary); }
 .dcu-badge.running { color: var(--dsw-alias-brand-primary); border-color: var(--dsw-alias-brand-primary); }
-.dcu-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.dcu-input { border: 0.5px solid var(--dsw-alias-border-l3); border-radius: 8px; padding: 5px 9px; font-size: 12.5px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); }
-.dcu-select { border: 0.5px solid var(--dsw-alias-border-l3); border-radius: 8px; padding: 5px 8px; font-size: 12.5px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); }
-.dcu-section-title { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
-.dcu-settings { display: flex; flex-direction: column; gap: 14px; padding: 4px 2px 8px; }
-.dcu-settings .dcu-card { background: var(--dsw-alias-bg-layer-1); }
-.dcu-roots { display: flex; flex-direction: column; gap: 2px; font-size: 11.5px; color: var(--dsw-alias-label-tertiary); }
-.dcu-fold > summary.dcu-sync-row { display: grid; grid-template-columns: minmax(90px, 1.1fr) auto minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 12px; padding: 5px 0 5px 14px; border-bottom: 0.5px solid var(--dsw-alias-border-l2); position: relative; }
-/* 折叠箭头绝对定位：summary 是 grid 容器，::before 若参与布局会挤掉第一列。 */
+
+/* ------------------------------------------------------------------ 表单 / 设置页 */
+.dcu-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.dcu-input { border: 1px solid var(--dcu-line); border-radius: var(--dcu-r-sm); padding: 8px 12px; font-size: 13px; background: var(--dcu-surface); color: var(--dsw-alias-label-primary); font-family: inherit; }
+.dcu-input:focus, .dcu-select:focus { outline: none; border-color: var(--dsw-alias-brand-primary); }
+.dcu-select { border: 1px solid var(--dcu-line); border-radius: var(--dcu-r-sm); padding: 8px 10px; font-size: 13px; background: var(--dcu-surface); color: var(--dsw-alias-label-primary); font-family: inherit; }
+.dcu-section-title { font-size: 15px; font-weight: 620; letter-spacing: -.01em; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* 分区标题：标题 + 一条延伸到底的细线。比"再加一张卡"轻，又比 13px 纯文字明确。 */
+.dcu-overview { display: flex; flex-direction: column; gap: 20px; }
+.dcu-rule { display: flex; align-items: baseline; gap: 12px; padding-top: 4px; }
+.dcu-rule::after { content: ''; flex: 1 1 auto; height: 1px; background: var(--dcu-line-soft); transform: translateY(-4px); }
+.dcu-rule-title { font-size: 17px; font-weight: 620; letter-spacing: -.015em; }
+.dcu-rule-note { font-size: 12.5px; color: var(--dsw-alias-label-tertiary); white-space: nowrap; }
+.dcu-settings { display: flex; flex-direction: column; gap: 18px; padding: 6px 2px 12px; }
+.dcu-roots { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--dsw-alias-label-tertiary); font-family: var(--ds-font-family-code, ui-monospace, monospace); }
+
+/* 同步行：summary 是 grid，折叠箭头绝对定位（参与布局会挤掉第一列）。 */
+.dcu-fold > summary.dcu-sync-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 1.1fr) auto minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 11px 0 11px 18px;
+  border-bottom: 1px solid var(--dcu-line-soft);
+  position: relative;
+}
 .dcu-fold > summary.dcu-sync-row::before { position: absolute; left: 0; top: 50%; transform: translateY(-50%); }
 .dcu-fold[open] > summary.dcu-sync-row::before { transform: translateY(-50%) rotate(90deg); }
 .dcu-sync-row:last-of-type { border-bottom: 0; }
-.dcu-sync-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dcu-sync-note { font-size: 11.5px; color: var(--dsw-alias-label-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dcu-sync-name { font-size: 13.5px; font-weight: 620; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dcu-sync-note { font-size: 12px; color: var(--dsw-alias-label-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 `
 
 function ensureStyle() {
@@ -344,20 +625,26 @@ function Spark({ points, width = 120, height = 30 }) {
     h('line', { x1: 0, y1: height / 2, x2: width, y2: height / 2, stroke: 'var(--dsw-alias-border-l2)', strokeWidth: 0.5, strokeDasharray: '2 2', vectorEffect: 'non-scaling-stroke' }),
     memArea ? h('path', { d: memArea, fill: '#d98a2b', opacity: 0.16, stroke: 'none' }) : null,
     cpuArea ? h('path', { d: cpuArea, fill: '#3d7bfd', opacity: 0.16, stroke: 'none' }) : null,
-    memPath ? h('path', { d: memPath, fill: 'none', stroke: '#d98a2b', strokeWidth: 1.2, vectorEffect: 'non-scaling-stroke', opacity: 0.95 }) : null,
-    cpuPath ? h('path', { d: cpuPath, fill: 'none', stroke: '#3d7bfd', strokeWidth: 1.4, vectorEffect: 'non-scaling-stroke' }) : null,
+    memPath ? h('path', { d: memPath, fill: 'none', stroke: '#d98a2b', strokeWidth: 1.3, vectorEffect: 'non-scaling-stroke', opacity: 0.95 }) : null,
+    cpuPath ? h('path', { d: cpuPath, fill: 'none', stroke: '#3d7bfd', strokeWidth: 1.6, vectorEffect: 'non-scaling-stroke' }) : null,
     h('g', { style: { color: '#3d7bfd' } }, dotAt(lastCpu)),
   )
 }
 
 /* ------------------------------------------------------------------ 首屏：健康总览 */
-function Stat({ tone, label, value, note, title }) {
+/**
+ * 一格统计：上行「状态点 + 小标签」，下行大数字，第三行一句注解。
+ *
+ * 为什么把标签和大数字分成两行：原先一行平铺（`节点 2/2 全部在线`）时，标签和数字
+ * 字号只差 2px，扫视时整条读成一串字，五格之间没有重心。分行之后 30px 的数字自己
+ * 立成视觉锚点，一格里"最要紧的那个数"先被看见，注解退到次要色。
+ */
+function Stat({ tone, label, value, unit, note, title }) {
   return h(
     'div',
     { className: 'dcu-stat', title },
-    tone ? h(Dot, { tone }) : null,
-    h('span', { className: 'dcu-stat-label' }, label),
-    h('span', { className: 'dcu-stat-value' }, value),
+    h('span', { className: 'dcu-stat-top' }, tone ? h(Dot, { tone }) : null, h('span', { className: 'dcu-stat-label' }, label)),
+    h('span', { className: 'dcu-stat-value' }, value, unit ? h('span', { className: 'dcu-stat-unit' }, unit) : null),
     note ? h('span', { className: 'dcu-stat-note' }, note) : null,
   )
 }
@@ -396,6 +683,7 @@ function HealthStrip({ data }) {
   const quorumOk = quorum === null ? null : peers.length + 1 >= quorum
   const waiting = (counts.waiting || 0) + (counts.pending || 0)
   const running = (counts.running || 0) + (counts.claimed || 0)
+  const total = num(queue.total) ?? 0
   const failed = counts.failed || 0
   const taskTone = failed > 0 ? 'warn' : running > 0 ? 'busy' : 'ok'
   const syncTone = syncStatus === null ? '' : toneOfRun(syncStatus)
@@ -406,20 +694,28 @@ function HealthStrip({ data }) {
     h(Stat, { tone: nodeTone, label: '节点', value: `${alive}/${nodes}`, note: alive === nodes ? '全部在线' : '有节点离线', title: '来自 /api/hosts 的 summary.alive / summary.nodes' }),
     h(Stat, {
       tone: quorumOk === null ? '' : quorumOk ? 'ok' : 'bad',
-      label: 'quorum',
-      value: quorum === null ? '—' : `${quorum}`,
-      note: peers.length ? `· ${peers.length + 1} 副本` : '· 单副本',
+      label: 'Quorum',
+      // 大数字直接给「quorum / 副本数」这一对比值：只写 2 的话看不出它是几选几。
+      value: quorum === null ? '—' : `${quorum}/${peers.length + 1}`,
+      note: peers.length ? `${peers.length + 1} 副本` : '单副本',
       title: '控制面 quorum 与对等副本数',
     }),
-    h(Stat, { tone: taskTone, label: '任务', value: `${running} 运行`, note: `· 排队 ${waiting}${failed ? ` · 失败 ${failed}` : ''}`, title: '任务队列分桶（pending/queued 归入排队，claimed/running 归入运行）' }),
+    h(Stat, {
+      tone: taskTone,
+      label: '运行中任务',
+      // 大数字放"正在跑的条数"，其余分桶退到注解行：一格里只能有一个重心。
+      value: `${running}`,
+      note: `排队 ${waiting}${failed ? ` · 失败 ${failed}` : ''} · 共 ${total} 条`,
+      title: '任务队列分桶（pending/queued 归入排队，claimed/running 归入运行）',
+    }),
     h(Stat, {
       tone: syncTone,
-      label: '同步',
+      label: '最近同步',
       value: syncText(syncStatus),
-      note: workspaces.length ? `· 最近一轮 · ${workspaces.length} 个工作区` : '· 还没有工作区',
+      note: workspaces.length ? `${workspaces.length} 个工作区` : '还没有工作区',
       title: '最近完成的那一轮同步的 status（done/partial/failed）；逐工作区的结果与冲突数见下方「同步状态」',
     }),
-    h(Stat, { tone: rttTone, label: '控制面', value: rtt === null ? '—' : `${Math.round(rtt)}ms`, note: '· 往返', title: '网关到控制面的一次快照耗时' }),
+    h(Stat, { tone: rttTone, label: '控制面', value: rtt === null ? '—' : `${Math.round(rtt)}`, unit: 'ms', note: '网关快照往返', title: '网关到控制面的一次快照耗时' }),
   )
 }
 
@@ -433,7 +729,7 @@ function HealthStrip({ data }) {
  */
 function ResourceBars({ hosts }) {
   if (hosts.length === 0) {
-    return h('section', { className: 'dcu-chart', 'aria-label': '节点资源' }, h('div', { className: 'dcu-chart-head' }, h('span', { className: 'dcu-chart-title' }, '节点资源')), h('div', { className: 'dcu-muted', style: { fontSize: 12 } }, '还没有节点数据。'))
+    return h('section', { className: 'dcu-chart', 'aria-label': '节点资源' }, h('div', { className: 'dcu-chart-head' }, h('span', { className: 'dcu-chart-title' }, '节点资源')), h('div', { className: 'dcu-muted dcu-cap-lg' }, '还没有节点数据。'))
   }
   return h(
     'section',
@@ -478,7 +774,7 @@ function ResourceBars({ hosts }) {
         )
       }),
     ),
-    h('div', { className: 'dcu-muted', style: { fontSize: 11 } }, '刻度 0–100%；内存条转红 = 已达 90%。数值取自 GET /api/hosts 的 metrics。'),
+    h('div', { className: 'dcu-chart-foot' }, '刻度 0–100%，内存条转红即已达 90%'),
   )
 }
 
@@ -513,9 +809,9 @@ function QueueCard({ queue }) {
   return h(
     'section',
     { className: 'dcu-chart', 'aria-label': '任务队列' },
-    h('div', { className: 'dcu-chart-head' }, h('span', { className: 'dcu-chart-title' }, '任务队列'), h('span', { className: 'dcu-spacer' }), h('span', { className: 'dcu-muted', style: { fontSize: 11 } }, `共 ${total}`)),
+    h('div', { className: 'dcu-chart-head' }, h('span', { className: 'dcu-chart-title' }, '任务队列'), h('span', { className: 'dcu-spacer' }), h('span', { className: 'dcu-muted dcu-cap' }, `共 ${total}`)),
     total === 0
-      ? h('div', { className: 'dcu-muted', style: { fontSize: 12 } }, '还没有任务：在 Router 里下一条指令就会出现在这里。')
+      ? h('div', { className: 'dcu-muted dcu-cap-lg' }, '还没有任务：在 Router 里下一条指令就会出现在这里。')
       : h(
           'div',
           { className: 'dcu-qbar', title: parts.map(([key, label]) => `${label} ${counts[key] || 0}`).join(' · ') },
@@ -539,7 +835,7 @@ function QueueCard({ queue }) {
           h(
             'div',
             { style: { display: 'flex', flexDirection: 'column', gap: 3, paddingTop: 6 } },
-            loading && !recent ? h('div', { className: 'dcu-muted', style: { fontSize: 11.5 } }, '读取中…') : null,
+            loading && !recent ? h('div', { className: 'dcu-muted dcu-cap' }, '读取中…') : null,
             (recent || []).map((task, index) =>
               h(
                 'div',
@@ -578,7 +874,7 @@ function HostCard({ host }) {
       h('span', { className: 'dcu-chip' }, host.os || '?'),
       host.role === 'router' ? h('span', { className: 'dcu-chip' }, 'router') : null,
       h('span', { className: 'dcu-spacer' }),
-      h('span', { className: 'dcu-muted', style: { fontSize: 11 } }, `更新 ${agoText(metrics.ts)}`),
+      h('span', { className: 'dcu-muted dcu-cap' }, `更新 ${agoText(metrics.ts)}`),
     ),
     h(
       'div',
@@ -616,14 +912,14 @@ function HostCard({ host }) {
           h('span', null, '网络 ↓ ', h('b', null, rateText(metrics.net_in_rate, metrics.net_unit)), ' ↑ ', h('b', null, rateText(metrics.net_out_rate, metrics.net_unit))),
           num(metrics.uptime_s) ? h('span', null, '已运行 ', h('b', null, uptimeText(metrics.uptime_s))) : null,
         ),
-        kindText ? h('div', { className: 'dcu-muted', style: { fontSize: 11 } }, kindText) : null,
+        kindText ? h('div', { className: 'dcu-muted dcu-cap' }, kindText) : null,
         h('div', { className: 'dcu-bar-tag', style: { marginTop: 2 } }, 'CPU / 内存 最近采样'),
         h(Spark, { points: host.history || [], height: 34 }),
         h(
           'div',
           { className: 'dcu-agents' },
           agents.length === 0
-            ? h('div', { className: 'dcu-muted', style: { fontSize: 12 } }, '该节点没有注册能力')
+            ? h('div', { className: 'dcu-muted dcu-cap-lg' }, '该节点没有注册能力')
             : agents.map((agent) =>
                 h(
                   'div',
@@ -643,12 +939,12 @@ function HostCard({ host }) {
 /* ------------------------------------------------------------------ 首屏：同步摘要（折叠） */
 function SyncSummary({ workspaces }) {
   if (!workspaces || workspaces.length === 0) {
-    return h('div', { className: 'dcu-run' }, h('div', { className: 'dcu-section-title' }, '同步'), h('div', { className: 'dcu-muted', style: { fontSize: 12 } }, '还没有工作区：在「同步」页或设置页新建一个。'))
+    return h('div', { className: 'dcu-run' }, h('div', { className: 'dcu-section-title' }, '同步'), h('div', { className: 'dcu-muted dcu-cap-lg' }, '还没有工作区：在「同步」页或设置页新建一个。'))
   }
   return h(
     'div',
     { className: 'dcu-run' },
-    h('div', { className: 'dcu-section-title' }, '同步状态', h('span', { className: 'dcu-muted', style: { fontWeight: 400, fontSize: 12 } }, '（每个工作区最近一轮）')),
+    h('div', { className: 'dcu-section-title' }, '同步状态', h('span', { className: 'dcu-muted dcu-cap-lg' }, '（每个工作区最近一轮）')),
     workspaces.map((item) => {
       const last = item.last || {}
       const counts = last.counts || {}
@@ -669,7 +965,7 @@ function SyncSummary({ workspaces }) {
           'summary',
           { className: 'dcu-sync-row', style: { listStyle: 'none' } },
           h('span', { className: 'dcu-sync-name' }, item.name),
-          h('span', null, status ? h('span', { className: `dcu-badge ${status}` }, syncText(status)) : h('span', { className: 'dcu-muted', style: { fontSize: 11 } }, '未同步')),
+          h('span', null, status ? h('span', { className: `dcu-badge ${status}` }, syncText(status)) : h('span', { className: 'dcu-muted dcu-cap' }, '未同步')),
           h(
             'span',
             { className: 'dcu-sync-note' },
@@ -678,14 +974,14 @@ function SyncSummary({ workspaces }) {
               : h('span', { className: 'dcu-muted' }, '无冲突'),
             note ? `  ${note}` : '',
           ),
-          h('span', { className: 'dcu-muted', style: { fontSize: 11 } }, last.finished ? agoText(last.finished) : '—'),
+          h('span', { className: 'dcu-muted dcu-cap' }, last.finished ? agoText(last.finished) : '—'),
         ),
         h(
           'div',
           { style: { paddingTop: 6, display: 'flex', flexDirection: 'column', gap: 4 } },
-          h('div', { className: 'dcu-muted', style: { fontSize: 11 } }, `${last.id || '—'} · 策略 ${last.policy || item.policy || '—'} · 第 ${last.attempt || 1} 次 · 状态 ${syncText(status)}`),
+          h('div', { className: 'dcu-muted dcu-cap' }, `${last.id || '—'} · 策略 ${last.policy || item.policy || '—'} · 第 ${last.attempt || 1} 次 · 状态 ${syncText(status)}`),
           (last.nodes || []).length === 0
-            ? h('div', { className: 'dcu-muted', style: { fontSize: 11.5 } }, '没有节点级记录')
+            ? h('div', { className: 'dcu-muted dcu-cap' }, '没有节点级记录')
             : (last.nodes || []).map((node) =>
                 h(
                   'div',
@@ -706,12 +1002,14 @@ function Overview({ data, error, history }) {
   const hosts = (data.items || []).map((host) => ({ ...host, history: mergeHistory(host.history, history[host.node_id]) }))
   return h(
     'div',
-    { style: { display: 'flex', flexDirection: 'column', gap: 12 } },
+    { className: 'dcu-overview' },
     h(HealthStrip, { data }),
     error ? h('div', { className: 'dcu-error' }, error) : null,
     h('div', { className: 'dcu-charts' }, h(ResourceBars, { hosts }), h(QueueCard, { queue: data.queue })),
     h(SyncSummary, { workspaces: data.workspaces }),
-    h('div', { className: 'dcu-section-title' }, '节点', h('span', { className: 'dcu-muted', style: { fontWeight: 400, fontSize: 12 } }, '（明细默认折叠）')),
+    // 分区标题：一条细线 + 标题，把「总览数字」与「逐节点明细」在视觉上切成两段。
+    // 没有它时节点卡会紧贴在同步卡下面，看起来像同步卡的一部分。
+    h('div', { className: 'dcu-rule' }, h('span', { className: 'dcu-rule-title' }, '节点'), h('span', { className: 'dcu-rule-note' }, `${hosts.length} 台 · 明细默认折叠`)),
     hosts.length === 0
       ? h('div', { className: 'dcu-muted' }, '没有节点被注册。')
       : h('div', { className: 'dcu-cards' }, hosts.map((host) => h(HostCard, { key: host.node_id, host }))),
@@ -988,7 +1286,7 @@ function SyncView({ onChanged }) {
     h(
       'div',
       { className: 'dcu-run' },
-      h('div', { className: 'dcu-section-title' }, 'cluster 工作区', h('span', { className: 'dcu-muted', style: { fontWeight: 400, fontSize: 12 } }, '（创建后立即同步所有节点）')),
+      h('div', { className: 'dcu-section-title' }, 'cluster 工作区', h('span', { className: 'dcu-muted dcu-cap-lg' }, '（创建后立即同步所有节点）')),
       h(
         'div',
         { className: 'dcu-form' },
@@ -1004,7 +1302,7 @@ function SyncView({ onChanged }) {
         h('button', { className: 'dcu-btn primary', onClick: create, disabled: busy || !name.trim() }, busy ? '处理中…' : '新建并同步'),
       ),
       workspaces.length === 0
-        ? h('div', { className: 'dcu-muted', style: { fontSize: 12 } }, `还没有工作区。节点根目录：${nodes.map((node) => `${node.node_id}=${node.os === 'windows' ? '<cluster 仓库>/.state/workspaces/<name>' : '~/cluster-test/workspaces/<name>'}`).join('，')}`)
+        ? h('div', { className: 'dcu-muted dcu-cap-lg' }, `还没有工作区。节点根目录：${nodes.map((node) => `${node.node_id}=${node.os === 'windows' ? '<cluster 仓库>/.state/workspaces/<name>' : '~/cluster-test/workspaces/<name>'}`).join('，')}`)
         : h(
             'div',
             { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
@@ -1012,9 +1310,9 @@ function SyncView({ onChanged }) {
               h(
                 'div',
                 { key: item.name, style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
-                h('b', { style: { fontSize: 12.5 } }, item.name),
+                h('b', { className: 'dcu-name' }, item.name),
                 runBadge(item.last_status),
-                h('span', { className: 'dcu-muted', style: { fontSize: 11.5 } }, `策略 ${item.policy}`),
+                h('span', { className: 'dcu-muted dcu-cap' }, `策略 ${item.policy}`),
                 h('span', { className: 'dcu-spacer' }),
                 h('button', { className: 'dcu-btn', onClick: () => sync(item.name), disabled: busy }, '同步'),
               ),
@@ -1060,7 +1358,7 @@ function SyncView({ onChanged }) {
             { className: 'dcu-run-head' },
             h('b', null, selected.workspace),
             runBadge(selected.status),
-            h('span', { className: 'dcu-muted', style: { fontSize: 11.5 } }, `${selected.id} · 第 ${selected.attempt} 次 · 策略 ${selected.policy} · 耗时 ${durationText((selected.finished || selected.updated || 0) - (selected.created || 0))}`),
+            h('span', { className: 'dcu-muted dcu-cap' }, `${selected.id} · 第 ${selected.attempt} 次 · 策略 ${selected.policy} · 耗时 ${durationText((selected.finished || selected.updated || 0) - (selected.created || 0))}`),
             h('span', { className: 'dcu-spacer' }),
             h('span', { className: 'dcu-chip' }, `文件 ${selected.counts.files}`),
             h('span', { className: 'dcu-chip' }, `已一致 ${selected.counts.in_sync}`),
@@ -1128,7 +1426,7 @@ function SyncView({ onChanged }) {
                 selected.conflicts.map((conflict) =>
                   h(
                     'div',
-                    { key: conflict.path, className: 'dcu-mono', style: { fontSize: 11.5, paddingTop: 6 } },
+                    { key: conflict.path, className: 'dcu-mono dcu-conflict', style: { paddingTop: 6 } },
                     `${conflict.path} → 由 ${conflict.winner} 胜出（策略 ${conflict.policy}）`,
                     h('div', { className: 'dcu-muted' }, Object.entries(conflict.sha_by_node || {}).map(([node, sha]) => `${node}:${String(sha).slice(0, 12)}`).join('  ')),
                   ),
@@ -1262,7 +1560,7 @@ function ClusterSettings({ close, openPanel }) {
     'div',
     { className: 'dcu-settings' },
     h('div', { className: 'dcu-section-title' }, 'Cluster 工作区',
-      h('span', { className: 'dcu-muted', style: { fontWeight: 400, fontSize: 12 } }, '一个工作区 = 每个节点上一个目录，内容保持一致')),
+      h('span', { className: 'dcu-muted dcu-cap-lg' }, '一个工作区 = 每个节点上一个目录，内容保持一致')),
     h('div', { className: 'dcu-form' }, h('button', { className: 'dcu-btn', onClick: load }, '刷新列表')),
     error ? h('div', { className: 'dcu-error' }, error) : null,
     // 连接信息：网关自报的控制面地址 / 证书来源 / token 位置，只读展示（真实取值来自 GET /api/health）。
@@ -1275,7 +1573,7 @@ function ClusterSettings({ close, openPanel }) {
         h(Dot, { tone: health ? 'ok' : 'bad' }),
         h('b', { className: 'dcu-node' }, '连接信息'),
         h('span', { className: 'dcu-spacer' }),
-        h('span', { className: 'dcu-muted', style: { fontSize: 11 } }, health ? `网关更新 ${agoText(health.ts)}` : '读不到网关'),
+        h('span', { className: 'dcu-muted dcu-cap' }, health ? `网关更新 ${agoText(health.ts)}` : '读不到网关'),
       ),
       health
         ? h(
@@ -1288,7 +1586,7 @@ function ClusterSettings({ close, openPanel }) {
           )
         : h(
             'div',
-            { className: 'dcu-muted', style: { fontSize: 12 } },
+            { className: 'dcu-muted dcu-cap-lg' },
             '网关没跑或 token 读不到。启动：python -m cluster ui --control https://127.0.0.1:18100 --port 18150 --tls-dir .state\\tls --cert-name win',
           ),
     ),
@@ -1311,7 +1609,7 @@ function ClusterSettings({ close, openPanel }) {
         openPanel ? h('button', { className: 'dcu-btn', onClick: () => { if (close) close(); openPanel() } }, '打开 Cluster 面板') : null,
       ),
       created && created.run
-        ? h('div', { className: 'dcu-muted', style: { fontSize: 12 } },
+        ? h('div', { className: 'dcu-muted dcu-cap-lg' },
             `已创建 ${created.workspace.name}；首轮同步 ${created.run.id}（${created.run.status}）：${Object.entries(created.workspace.roots || {}).map(([node, root]) => `${node}→${root}`).join('，')}`)
         : null,
     ),
@@ -1327,7 +1625,7 @@ function ClusterSettings({ close, openPanel }) {
               h('b', { className: 'dcu-node' }, item.name),
               runBadge(item.last_status),
               h('span', { className: 'dcu-spacer' }),
-              h('span', { className: 'dcu-muted', style: { fontSize: 11.5 } }, `策略 ${item.policy}`),
+              h('span', { className: 'dcu-muted dcu-cap' }, `策略 ${item.policy}`),
               h('button', { className: 'dcu-btn', onClick: () => sync(item.name), disabled: busy }, '同步'),
             ),
             h('div', { className: 'dcu-roots' }, Object.entries(item.roots || {}).map(([nodeId, root]) => h('span', { key: nodeId }, `${nodeId} → ${root}`))),
