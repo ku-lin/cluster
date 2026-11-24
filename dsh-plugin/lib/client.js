@@ -4,14 +4,17 @@
  * 三个落点（对应需求的三条）：
  *   1. `settings.section`  id=cluster          设置页里的「Cluster」：列出集群、新建 cluster 工作区
  *   2. `main` + `sidebar.panellist` key=dsh-cluster-ui
- *                                             主面板「Cluster」：主机卡片（CPU/内存/网络/worker）+ 展开看 agents
- *                                             + 顶部 Router 对话框（独立配色/边框，明显区别于普通会话）
- *                                             + 「同步」页：每个节点/每个文件的同步结果、冲突、重试
+ *                                             主面板「Cluster」：首屏只放状态与图表
+ *                                             （健康总览 + 每节点 CPU/内存趋势 + 任务队列 + 同步状态），
+ *                                             明细（capability/agent 列表、同步逐文件结果）默认折叠
  *   3. Router 对话框发送消息 -> POST /cluster-ui/api/router/message（服务端转发到 cluster 网关）
  *
  * 说明：这里刻意不引 UI 组件库、不做构建步骤——`lib/client.js` 就是交给
  * dsh-client-modules 加载的成品 bundle（它要求预构建产物）。所有请求都走同源
  * `/cluster-ui/api/*`，由 host 侧代理并附 token。
+ *
+ * 图表全部是纯 SVG/CSS（折线 + 堆叠条），不引图表库：首屏要的是"一眼看出状态"，
+ * 不需要交互式图表那种体积。
  */
 window.__ModuleLoader__.load({
   id: 'dsh-cluster-ui',
@@ -68,10 +71,52 @@ function agoText(ts) {
   const seconds = Math.max(0, Math.round(Date.now() / 1000 - n))
   if (seconds < 60) return `${seconds}s 前`
   if (seconds < 3600) return `${Math.round(seconds / 60)}m 前`
-  return `${Math.round(seconds / 3600)}h 前`
+  if (seconds < 86400) return `${Math.round(seconds / 3600)}h 前`
+  return `${Math.round(seconds / 86400)}d 前`
+}
+function durationText(seconds) {
+  const n = num(seconds)
+  if (n === null) return '—'
+  if (n < 1) return `${Math.round(n * 1000)}ms`
+  if (n < 60) return `${n.toFixed(1)}s`
+  return `${Math.round(n / 60)}m`
+}
+/** 运行时长：`238m` 这种要人再除一次才能读，超过 1 小时就给 `3h58m`。 */
+function uptimeText(seconds) {
+  const n = num(seconds)
+  if (n === null || n < 0) return '—'
+  if (n < 60) return `${Math.round(n)}s`
+  if (n < 3600) return `${Math.round(n / 60)}m`
+  const hours = Math.floor(n / 3600)
+  const minutes = Math.round((n - hours * 3600) / 60)
+  return minutes ? `${hours}h${minutes}m` : `${hours}h`
 }
 const toneOfNode = (host) => (host.alive ? (num(host.metrics && host.metrics.ts) && Date.now() / 1000 - host.metrics.ts > 30 ? 'warn' : 'ok') : 'bad')
 const toneOfAgent = (agent) => (agent.status === 'busy' ? 'busy' : agent.status === 'down' ? 'bad' : 'ok')
+const toneOfRun = (status) => (status === 'done' ? 'ok' : status === 'partial' ? 'warn' : status === 'failed' ? 'bad' : status === 'running' ? 'busy' : '')
+function kindCounts(agents) {
+  const out = {}
+  for (const agent of agents || []) {
+    const kind = agent.kind || 'other'
+    out[kind] = (out[kind] || 0) + 1
+  }
+  return out
+}
+
+/* 历史：服务端采样 + 本地累积合并（服务端旧版本没有 history 时也能有趋势）。 */
+function mergeHistory(serverRows, localRows) {
+  const rows = []
+  const seen = new Set()
+  for (const row of [...(serverRows || []), ...(localRows || [])]) {
+    if (!row || typeof row.ts !== 'number') continue
+    const key = row.ts.toFixed(1)
+    if (seen.has(key)) continue
+    seen.add(key)
+    rows.push(row)
+  }
+  rows.sort((a, b) => a.ts - b.ts)
+  return rows.slice(-60)
+}
 
 /* ------------------------------------------------------------------ 样式 */
 const STYLE_ID = 'dsh-cluster-ui-style'
@@ -86,7 +131,7 @@ const CSS = `
 .dcu-btn:disabled { opacity: .5; cursor: default; }
 .dcu-btn.primary { background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); border-color: transparent; }
 .dcu-btn.warn { border-color: #c98b3a; color: #9a6520; }
-.dcu-chip { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 1px 8px; font-size: 11px; border: 0.5px solid var(--dsw-alias-border-l3); color: var(--dsw-alias-label-secondary); }
+.dcu-chip { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 1px 8px; font-size: 11px; border: 0.5px solid var(--dsw-alias-border-l3); color: var(--dsw-alias-label-secondary); white-space: nowrap; }
 .dcu-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
 .dcu-dot.ok { background: var(--dsw-alias-state-success-primary); }
 .dcu-dot.warn { background: var(--dsw-alias-state-warn-primary); }
@@ -98,6 +143,60 @@ const CSS = `
 .dcu-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 14px 18px 22px; display: flex; flex-direction: column; gap: 12px; }
 .dcu-error { border: 0.5px solid var(--dsw-alias-state-error-primary); color: var(--dsw-alias-state-error-primary); border-radius: 10px; padding: 8px 10px; font-size: 12px; }
 .dcu-summary { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* 首屏：健康总览条 */
+.dcu-strip { display: flex; flex-wrap: wrap; gap: 6px; border: 0.5px solid var(--dsw-alias-border-l3); background: var(--dsw-alias-bg-layer-1); border-radius: 12px; padding: 8px 10px; }
+.dcu-stat { display: flex; align-items: center; gap: 6px; padding: 3px 10px 3px 8px; border-radius: 9px; min-width: 0; }
+.dcu-stat + .dcu-stat { border-left: 0.5px solid var(--dsw-alias-border-l2); }
+.dcu-stat-label { font-size: 11px; color: var(--dsw-alias-label-tertiary); }
+.dcu-stat-value { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.dcu-stat-note { font-size: 11px; color: var(--dsw-alias-label-tertiary); margin-left: 2px; }
+
+/* 首屏：图表 */
+.dcu-charts { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 12px; }
+@media (max-width: 900px) { .dcu-charts { grid-template-columns: 1fr; } }
+.dcu-chart { border: 0.5px solid var(--dsw-alias-border-l3); border-radius: 14px; background: var(--dsw-alias-bg-layer-1); padding: 11px 14px 12px; display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+.dcu-chart-head { display: flex; align-items: center; gap: 8px; }
+.dcu-chart-title { font-size: 12.5px; font-weight: 600; }
+.dcu-legend { display: flex; gap: 10px; font-size: 11px; color: var(--dsw-alias-label-tertiary); align-items: center; }
+.dcu-legend-swatch { width: 10px; height: 2px; border-radius: 2px; display: inline-block; }
+.dcu-spark-row { display: grid; grid-template-columns: 92px minmax(0, 1fr) 96px; gap: 10px; align-items: center; }
+.dcu-spark-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dcu-spark { width: 100%; height: 30px; display: block; }
+.dcu-spark-empty { font-size: 11px; color: var(--dsw-alias-label-tertiary); height: 30px; display: flex; align-items: center; }
+.dcu-spark-vals { font-size: 11px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+/* 首屏中部：每节点 CPU/内存条形（纯 CSS 宽度编码，不做折线） */
+.dcu-bars { display: flex; flex-direction: column; gap: 10px; }
+.dcu-bar-node { display: grid; grid-template-columns: 88px minmax(0, 1fr) 132px; gap: 10px; align-items: center; }
+.dcu-bar-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dcu-bar-pair { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.dcu-bar { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 8px; align-items: center; }
+.dcu-bar-tag { font-size: 11px; color: var(--dsw-alias-label-tertiary); }
+/* 轨道用半透明灰而不是主题的 bg-layer-3：主题皮肤（dream skin）会把那层压到和卡片几乎同色，
+   轨道看不见时 0% 和"没数据"就分不出来了。 */
+.dcu-bar-track { height: 8px; border-radius: 999px; background: rgba(120, 120, 120, .2); box-shadow: inset 0 0 0 1px rgba(120, 120, 120, .12); overflow: hidden; }
+.dcu-bar-fill { display: block; height: 100%; border-radius: 999px; background: #3d7bfd; transition: width .3s ease; }
+/* CPU 靛蓝 / 内存琥珀是写死的两个色，不跟主题走：图例的小色块用同一对值，
+   保证"图例上的颜色"和"条上的颜色"永远一致（主题变量在这套皮肤下两者同色）。 */
+.dcu-bar-fill.mem { background: #d98a2b; }
+.dcu-bar-fill.bad { background: var(--dsw-alias-state-error-primary); }
+.dcu-bar-vals { font-size: 11px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+@media (max-width: 640px) { .dcu-bar-node { grid-template-columns: minmax(0, 1fr); gap: 4px; } .dcu-bar-vals { text-align: left; } }
+@media (prefers-reduced-motion: reduce) { .dcu-bar-fill { transition: none; } }
+
+.dcu-qbar { display: flex; height: 12px; border-radius: 999px; overflow: hidden; background: var(--dsw-alias-bg-layer-3); }
+.dcu-qseg { height: 100%; }
+.dcu-qseg.waiting { background: var(--dsw-alias-state-warn-primary); opacity: .55; }
+.dcu-qseg.running { background: var(--dsw-alias-brand-primary); }
+.dcu-qseg.done { background: var(--dsw-alias-state-success-primary); opacity: .8; }
+.dcu-qseg.failed { background: var(--dsw-alias-state-error-primary); }
+.dcu-qseg.cancelled, .dcu-qseg.unknown { background: var(--dsw-alias-label-tertiary); opacity: .4; }
+.dcu-qkeys { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 11.5px; color: var(--dsw-alias-label-secondary); }
+.dcu-qkey { display: inline-flex; align-items: center; gap: 5px; }
+.dcu-qkey b { font-variant-numeric: tabular-nums; color: var(--dsw-alias-label-primary); }
+.dcu-qkey .dcu-dot { width: 8px; height: 8px; border-radius: 3px; }
+
+/* 主机卡 */
 .dcu-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
 .dcu-card { border: 0.5px solid var(--dsw-alias-border-l3); border-radius: 14px; padding: 12px 14px; background: var(--dsw-alias-bg-layer-1); display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .dcu-card-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -111,15 +210,25 @@ const CSS = `
 .dcu-meter-fill.bad { background: var(--dsw-alias-state-error-primary); }
 .dcu-kv { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
 .dcu-kv b { color: var(--dsw-alias-label-primary); font-weight: 600; }
-.dcu-agents { display: flex; flex-direction: column; gap: 3px; border-top: 0.5px dashed var(--dsw-alias-border-l3); padding-top: 8px; }
+
+/* 折叠：明细默认收起 */
+.dcu-fold { border-top: 0.5px dashed var(--dsw-alias-border-l3); padding-top: 8px; }
+.dcu-fold > summary { cursor: pointer; font-size: 11.5px; color: var(--dsw-alias-label-tertiary); list-style: none; display: flex; align-items: center; gap: 6px; }
+.dcu-fold > summary::-webkit-details-marker { display: none; }
+.dcu-fold > summary::before { content: '▸'; font-size: 10px; color: var(--dsw-alias-label-tertiary); transition: transform .12s ease; }
+.dcu-fold[open] > summary::before { transform: rotate(90deg); }
+.dcu-fold > summary:hover { color: var(--dsw-alias-label-secondary); }
+.dcu-agents { display: flex; flex-direction: column; gap: 3px; padding-top: 8px; }
 .dcu-agent { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto auto; gap: 8px; align-items: center; font-size: 12px; }
 .dcu-agent-id { font-family: var(--ds-font-family-code, ui-monospace, SFMono-Regular, Menlo, monospace); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dcu-muted { color: var(--dsw-alias-label-tertiary); }
+
 /* Router 对话框：深色板 + 琥珀描边，刻意和普通会话的浅色输入框拉开距离 */
 .dcu-router { margin: 0 18px 12px; border-radius: 14px; border: 1px solid rgba(201, 139, 58, .75); background: linear-gradient(180deg, #241a11 0%, #161210 100%); color: #f4e8d6; box-shadow: 0 10px 26px rgba(0, 0, 0, .18); display: flex; flex-direction: column; min-height: 0; }
+.dcu-router.collapsed { padding-bottom: 2px; }
 .dcu-router-head { display: flex; align-items: center; gap: 8px; padding: 9px 13px 7px; border-bottom: 1px solid rgba(201, 139, 58, .35); }
 .dcu-router-title { font-size: 12.5px; font-weight: 700; letter-spacing: .6px; color: #f0c07a; text-transform: uppercase; }
-.dcu-router-tag { font-size: 11px; color: rgba(244, 232, 214, .62); }
+.dcu-router-tag { font-size: 11px; color: rgba(244, 232, 214, .62); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .dcu-router-log { max-height: 158px; overflow: auto; padding: 9px 13px; display: flex; flex-direction: column; gap: 7px; font-size: 12.5px; line-height: 1.5; }
 .dcu-turn { display: flex; flex-direction: column; gap: 3px; }
 .dcu-turn-user { color: #f0c07a; font-weight: 600; }
@@ -151,6 +260,13 @@ const CSS = `
 .dcu-settings { display: flex; flex-direction: column; gap: 14px; padding: 4px 2px 8px; }
 .dcu-settings .dcu-card { background: var(--dsw-alias-bg-layer-1); }
 .dcu-roots { display: flex; flex-direction: column; gap: 2px; font-size: 11.5px; color: var(--dsw-alias-label-tertiary); }
+.dcu-fold > summary.dcu-sync-row { display: grid; grid-template-columns: minmax(90px, 1.1fr) auto minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 12px; padding: 5px 0 5px 14px; border-bottom: 0.5px solid var(--dsw-alias-border-l2); position: relative; }
+/* 折叠箭头绝对定位：summary 是 grid 容器，::before 若参与布局会挤掉第一列。 */
+.dcu-fold > summary.dcu-sync-row::before { position: absolute; left: 0; top: 50%; transform: translateY(-50%); }
+.dcu-fold[open] > summary.dcu-sync-row::before { transform: translateY(-50%) rotate(90deg); }
+.dcu-sync-row:last-of-type { border-bottom: 0; }
+.dcu-sync-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dcu-sync-note { font-size: 11.5px; color: var(--dsw-alias-label-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 `
 
 function ensureStyle() {
@@ -167,14 +283,438 @@ function Dot({ tone }) {
   return h('span', { className: `dcu-dot ${tone}` })
 }
 
-function Meter({ label, value, detail, invert }) {
+function Meter({ label, value, detail }) {
   const n = num(value)
   const level = n === null ? '' : n >= 90 ? 'bad' : n >= 75 ? 'warn' : ''
   return h(
     'div',
     { className: 'dcu-meter' },
     h('div', { className: 'dcu-meter-head' }, h('span', null, label), h('span', null, detail || percent(value))),
-    h('div', { className: 'dcu-meter-track' }, h('div', { className: `dcu-meter-fill ${invert ? '' : level}`, style: { width: `${n === null ? 0 : Math.max(0, Math.min(100, n))}%` } })),
+    h('div', { className: 'dcu-meter-track' }, h('div', { className: `dcu-meter-fill ${level}`, style: { width: `${n === null ? 0 : Math.max(0, Math.min(100, n))}%` } })),
+  )
+}
+
+/**
+ * 迷你趋势线：纯 SVG，两条折线（CPU / 内存），固定 0–100% 纵轴。
+ *
+ * 为什么固定刻度而不是自适应：自适应会让 0.3% 的平坦曲线看起来像剧烈波动，
+ * 那种"信息"是假的。固定刻度下平就是平，需要精确值就看右边的数字。
+ */
+function Spark({ points, width = 120, height = 30 }) {
+  const rows = (points || []).filter((row) => num(row.cpu) !== null || num(row.mem) !== null)
+  if (rows.length === 0) return h('div', { className: 'dcu-spark-empty' }, '采样中…')
+  // 上下各留 3px：低负载（<5%）时折线会贴到基线上，和坐标轴糊成一条黑线，看不出"在动"。
+  const PAD = 3
+  const x = (index) => (rows.length === 1 ? width / 2 : (index / (rows.length - 1)) * width)
+  const y = (value) => height - PAD - (Math.max(0, Math.min(100, value)) / 100) * (height - PAD * 2)
+  const path = (key) => {
+    let out = ''
+    let started = false
+    rows.forEach((row, index) => {
+      const value = num(row[key])
+      if (value === null) {
+        started = false
+        return
+      }
+      out += `${started ? 'L' : 'M'}${x(index).toFixed(2)} ${y(value).toFixed(2)} `
+      started = true
+    })
+    return out.trim()
+  }
+  /** 折线下方的淡填充：一条贴底的细线看不出趋势，有了面积块才能判断"一直很低"还是"掉下来了"。 */
+  const area = (key) => {
+    const line = path(key)
+    if (!line) return ''
+    const first = rows.findIndex((row) => num(row[key]) !== null)
+    const last = rows.length - 1 - [...rows].reverse().findIndex((row) => num(row[key]) !== null)
+    return `${line} L${x(last).toFixed(2)} ${height} L${x(first).toFixed(2)} ${height} Z`
+  }
+  const lastCpu = [...rows].reverse().map((row) => num(row.cpu)).find((value) => value !== null)
+  const cpuPath = path('cpu')
+  const memPath = path('mem')
+  const cpuArea = area('cpu')
+  const memArea = area('mem')
+  const lastIndex = rows.length - 1
+  const dotAt = (value) =>
+    num(value) === null ? null : h('circle', { cx: x(lastIndex), cy: y(value), r: 1.8, fill: 'currentColor', stroke: 'none' })
+  return h(
+    'svg',
+    { className: 'dcu-spark', viewBox: `0 0 ${width} ${height}`, preserveAspectRatio: 'none', role: 'img', 'aria-label': 'CPU 与内存趋势' },
+    h('line', { x1: 0, y1: height - 1, x2: width, y2: height - 1, stroke: 'var(--dsw-alias-border-l2)', strokeWidth: 0.5, vectorEffect: 'non-scaling-stroke' }),
+    h('line', { x1: 0, y1: height / 2, x2: width, y2: height / 2, stroke: 'var(--dsw-alias-border-l2)', strokeWidth: 0.5, strokeDasharray: '2 2', vectorEffect: 'non-scaling-stroke' }),
+    memArea ? h('path', { d: memArea, fill: '#d98a2b', opacity: 0.16, stroke: 'none' }) : null,
+    cpuArea ? h('path', { d: cpuArea, fill: '#3d7bfd', opacity: 0.16, stroke: 'none' }) : null,
+    memPath ? h('path', { d: memPath, fill: 'none', stroke: '#d98a2b', strokeWidth: 1.2, vectorEffect: 'non-scaling-stroke', opacity: 0.95 }) : null,
+    cpuPath ? h('path', { d: cpuPath, fill: 'none', stroke: '#3d7bfd', strokeWidth: 1.4, vectorEffect: 'non-scaling-stroke' }) : null,
+    h('g', { style: { color: '#3d7bfd' } }, dotAt(lastCpu)),
+  )
+}
+
+/* ------------------------------------------------------------------ 首屏：健康总览 */
+function Stat({ tone, label, value, note, title }) {
+  return h(
+    'div',
+    { className: 'dcu-stat', title },
+    tone ? h(Dot, { tone }) : null,
+    h('span', { className: 'dcu-stat-label' }, label),
+    h('span', { className: 'dcu-stat-value' }, value),
+    note ? h('span', { className: 'dcu-stat-note' }, note) : null,
+  )
+}
+
+/** 冲突策略的对外文字：接口里是 `newest` / `prefer:<node>`。 */
+function policyText(policy) {
+  const value = String(policy || '')
+  if (!value) return '—'
+  if (value === 'newest') return '最新优先'
+  if (value.startsWith('prefer:')) return `优先 ${value.slice(7)}`
+  return value
+}
+
+/** 同步状态的对外文字：首屏是给人扫的，英文枚举只在明细里出现。 */
+const SYNC_TEXT = { done: '完成', partial: '部分', failed: '失败', running: '运行中', queued: '排队' }
+const syncText = (status) => (status ? SYNC_TEXT[status] || status : '无记录')
+
+function HealthStrip({ data }) {
+  const summary = (data && data.summary) || {}
+  const queue = (data && data.queue) || { counts: {}, total: 0 }
+  const counts = queue.counts || {}
+  const workspaces = (data && data.workspaces) || []
+  // 顶栏这一格回答"最近一次同步成没成"，所以取 finished/created 最新的那轮，而不是各工作区最差档：
+  // 后者在"老工作区 failed、新工作区刚 done"时会一直挂着一个红点，人看着像是当前有问题。
+  const latestSync = workspaces
+    .filter((item) => item && item.last)
+    .slice()
+    .sort((a, b) => (b.last.finished || b.last.created || 0) - (a.last.finished || a.last.created || 0))[0]
+  const syncStatus = latestSync ? latestSync.last.status || latestSync.last_status : null
+  const nodes = num(summary.nodes) ?? 0
+  const alive = num(summary.alive) ?? 0
+  const peers = (data && data.peers) || []
+  const quorum = num(data && data.quorum)
+  const rtt = num(data && data.upstream && data.upstream.rtt_ms)
+  const nodeTone = nodes === 0 ? 'bad' : alive === nodes ? 'ok' : alive > 0 ? 'warn' : 'bad'
+  const quorumOk = quorum === null ? null : peers.length + 1 >= quorum
+  const waiting = (counts.waiting || 0) + (counts.pending || 0)
+  const running = (counts.running || 0) + (counts.claimed || 0)
+  const failed = counts.failed || 0
+  const taskTone = failed > 0 ? 'warn' : running > 0 ? 'busy' : 'ok'
+  const syncTone = syncStatus === null ? '' : toneOfRun(syncStatus)
+  const rttTone = rtt === null ? '' : rtt < 300 ? 'ok' : rtt < 1500 ? 'warn' : 'bad'
+  return h(
+    'div',
+    { className: 'dcu-strip' },
+    h(Stat, { tone: nodeTone, label: '节点', value: `${alive}/${nodes}`, note: alive === nodes ? '全部在线' : '有节点离线', title: '来自 /api/hosts 的 summary.alive / summary.nodes' }),
+    h(Stat, {
+      tone: quorumOk === null ? '' : quorumOk ? 'ok' : 'bad',
+      label: 'quorum',
+      value: quorum === null ? '—' : `${quorum}`,
+      note: peers.length ? `· ${peers.length + 1} 副本` : '· 单副本',
+      title: '控制面 quorum 与对等副本数',
+    }),
+    h(Stat, { tone: taskTone, label: '任务', value: `${running} 运行`, note: `· 排队 ${waiting}${failed ? ` · 失败 ${failed}` : ''}`, title: '任务队列分桶（pending/queued 归入排队，claimed/running 归入运行）' }),
+    h(Stat, {
+      tone: syncTone,
+      label: '同步',
+      value: syncText(syncStatus),
+      note: workspaces.length ? `· 最近一轮 · ${workspaces.length} 个工作区` : '· 还没有工作区',
+      title: '最近完成的那一轮同步的 status（done/partial/failed）；逐工作区的结果与冲突数见下方「同步状态」',
+    }),
+    h(Stat, { tone: rttTone, label: '控制面', value: rtt === null ? '—' : `${Math.round(rtt)}ms`, note: '· 往返', title: '网关到控制面的一次快照耗时' }),
+  )
+}
+
+/* ------------------------------------------------------------------ 首屏：图表 */
+/**
+ * 每节点 CPU / 内存条形。
+ *
+ * 为什么用条形而不是折线：首屏的问题是「现在谁吃满了」，条形把当前值直接映射成
+ * 长度，横向一列就能扫完两台机；折线回答的是「过去怎么变的」，那是第二屏的事。
+ * 宽度用 CSS 百分比，不画 SVG——没有坐标轴要对齐，SVG 只会多一层 viewBox 缩放误差。
+ */
+function ResourceBars({ hosts }) {
+  if (hosts.length === 0) {
+    return h('section', { className: 'dcu-chart', 'aria-label': '节点资源' }, h('div', { className: 'dcu-chart-head' }, h('span', { className: 'dcu-chart-title' }, '节点资源')), h('div', { className: 'dcu-muted', style: { fontSize: 12 } }, '还没有节点数据。'))
+  }
+  return h(
+    'section',
+    { className: 'dcu-chart', 'aria-label': '节点资源' },
+    h(
+      'div',
+      { className: 'dcu-chart-head' },
+      h('span', { className: 'dcu-chart-title' }, '节点资源'),
+      h('span', { className: 'dcu-spacer' }),
+      h(
+        'div',
+        { className: 'dcu-legend' },
+        h('span', null, h('span', { className: 'dcu-legend-swatch', style: { background: '#3d7bfd' } }), ' CPU'),
+        h('span', null, h('span', { className: 'dcu-legend-swatch', style: { background: '#d98a2b' } }), ' 内存'),
+      ),
+    ),
+    h(
+      'div',
+      { className: 'dcu-bars' },
+      hosts.map((host) => {
+        const metrics = host.metrics || {}
+        const cpu = num(metrics.cpu_percent)
+        const mem = num(metrics.mem_percent)
+        const fill = (value, cls) =>
+          h('div', { className: 'dcu-bar-track' }, h('span', { className: `dcu-bar-fill ${cls}${value !== null && value >= 90 ? ' bad' : ''}`, style: { width: `${value === null ? 0 : Math.max(0, Math.min(100, value))}%` } }))
+        return h(
+          'div',
+          { className: 'dcu-bar-node', key: host.node_id },
+          h('span', { className: 'dcu-bar-name', title: host.node_id }, host.node_id),
+          h(
+            'div',
+            { className: 'dcu-bar-pair' },
+            h('div', { className: 'dcu-bar', title: `CPU ${percent(cpu)}` }, h('span', { className: 'dcu-bar-tag' }, 'CPU'), fill(cpu, '')),
+            h('div', { className: 'dcu-bar', title: `内存 ${percent(mem)}` }, h('span', { className: 'dcu-bar-tag' }, '内存'), fill(mem, 'mem')),
+          ),
+          h(
+            'span',
+            { className: 'dcu-bar-vals' },
+            `${percent(cpu)} · ${percent(mem)}`,
+            num(metrics.cpu_count) ? h('span', { className: 'dcu-muted' }, ` / ${metrics.cpu_count} 核`) : null,
+          ),
+        )
+      }),
+    ),
+    h('div', { className: 'dcu-muted', style: { fontSize: 11 } }, '刻度 0–100%；内存条转红 = 已达 90%。数值取自 GET /api/hosts 的 metrics。'),
+  )
+}
+
+function QueueCard({ queue }) {
+  const counts = (queue && queue.counts) || {}
+  const total = num(queue && queue.total) ?? 0
+  const [recent, setRecent] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const parts = [
+    ['waiting', '排队'],
+    ['running', '运行中'],
+    ['done', '完成'],
+    ['failed', '失败'],
+    ['cancelled', '取消'],
+  ]
+  const other = (counts.unknown || 0)
+
+  // 最近任务按需拉：首屏不多打一次请求，展开才取。
+  const loadRecent = async () => {
+    if (recent || loading) return
+    setLoading(true)
+    try {
+      const data = await getJSON('/tasks?limit=10')
+      setRecent((data.items || []).slice().reverse())
+    } catch (failure) {
+      setRecent([{ id: `读取失败: ${String(failure.message || failure)}` }])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return h(
+    'section',
+    { className: 'dcu-chart', 'aria-label': '任务队列' },
+    h('div', { className: 'dcu-chart-head' }, h('span', { className: 'dcu-chart-title' }, '任务队列'), h('span', { className: 'dcu-spacer' }), h('span', { className: 'dcu-muted', style: { fontSize: 11 } }, `共 ${total}`)),
+    total === 0
+      ? h('div', { className: 'dcu-muted', style: { fontSize: 12 } }, '还没有任务：在 Router 里下一条指令就会出现在这里。')
+      : h(
+          'div',
+          { className: 'dcu-qbar', title: parts.map(([key, label]) => `${label} ${counts[key] || 0}`).join(' · ') },
+          parts
+            .filter(([key]) => (counts[key] || 0) > 0)
+            .map(([key]) => h('div', { key, className: `dcu-qseg ${key}`, style: { width: `${((counts[key] || 0) / total) * 100}%` } })),
+          other > 0 ? h('div', { className: 'dcu-qseg unknown', style: { width: `${(other / total) * 100}%` } }) : null,
+        ),
+    h(
+      'div',
+      { className: 'dcu-qkeys' },
+      parts.map(([key, label]) =>
+        h('span', { className: 'dcu-qkey', key }, h('span', { className: `dcu-dot ${key === 'done' ? 'ok' : key === 'failed' ? 'bad' : key === 'waiting' ? 'warn' : key === 'running' ? 'busy' : ''}`, style: { background: key === 'cancelled' ? 'var(--dsw-alias-label-tertiary)' : undefined } }), label, h('b', null, counts[key] || 0)),
+      ),
+    ),
+    total > 0
+      ? h(
+          'details',
+          { className: 'dcu-fold', onToggle: (event) => { if (event.currentTarget.open) loadRecent() } },
+          h('summary', null, '最近任务'),
+          h(
+            'div',
+            { style: { display: 'flex', flexDirection: 'column', gap: 3, paddingTop: 6 } },
+            loading && !recent ? h('div', { className: 'dcu-muted', style: { fontSize: 11.5 } }, '读取中…') : null,
+            (recent || []).map((task, index) =>
+              h(
+                'div',
+                { className: 'dcu-agent', key: task.id || index, style: { gridTemplateColumns: '10px minmax(0, 1fr) auto' } },
+                h(Dot, { tone: task.status === 'done' ? 'ok' : task.status === 'failed' ? 'bad' : task.status === 'running' || task.status === 'claimed' ? 'busy' : 'warn' }),
+                h('span', { className: 'dcu-agent-id', title: task.cap_id || '' }, `${task.id || '—'}${task.cap_id ? ` · ${task.cap_id}` : ''}`),
+                h('span', { className: 'dcu-muted' }, `${task.node_id || '—'} · ${task.status || '?'}`),
+              ),
+            ),
+          ),
+        )
+      : null,
+  )
+}
+
+/* ------------------------------------------------------------------ 主机卡（明细折叠） */
+function HostCard({ host }) {
+  const metrics = host.metrics || {}
+  const agents = host.agents || []
+  const kinds = kindCounts(agents)
+  const kindText = Object.entries(kinds)
+    .map(([kind, count]) => `${kind} ${count}`)
+    .join(' · ')
+  const workers = num(metrics.workers)
+  const maxWorkers = num(metrics.max_workers)
+  return h(
+    'article',
+    { className: 'dcu-card' },
+    // 卡面只留「这台机是谁、现在多忙、带多少活」：主机名 / OS / CPU / 内存 / worker / 能力数。
+    // mesh IP、网卡速率、采样点、agent 逐个状态都属于明细，默认收在下面的 details 里。
+    h(
+      'div',
+      { className: 'dcu-card-head' },
+      h(Dot, { tone: toneOfNode(host) }),
+      h('span', { className: 'dcu-node', title: host.node_id }, host.node_id),
+      h('span', { className: 'dcu-chip' }, host.os || '?'),
+      host.role === 'router' ? h('span', { className: 'dcu-chip' }, 'router') : null,
+      h('span', { className: 'dcu-spacer' }),
+      h('span', { className: 'dcu-muted', style: { fontSize: 11 } }, `更新 ${agoText(metrics.ts)}`),
+    ),
+    h(
+      'div',
+      { className: 'dcu-metrics' },
+      h(Meter, { label: 'CPU', value: metrics.cpu_percent, detail: num(metrics.cpu_count) ? `${percent(metrics.cpu_percent)} · ${metrics.cpu_count} 核` : percent(metrics.cpu_percent) }),
+      h(Meter, {
+        label: '内存',
+        value: metrics.mem_percent,
+        detail: num(metrics.mem_used_mb) ? `${Math.round(metrics.mem_used_mb)}/${Math.round(num(metrics.mem_total_mb) || 0)}MB` : percent(metrics.mem_percent),
+      }),
+    ),
+    h(
+      'div',
+      { className: 'dcu-kv' },
+      h('span', null, 'worker ', h('b', null, workers === null ? '—' : `${workers}/${maxWorkers ?? '?'}`)),
+      h('span', null, '能力 ', h('b', null, agents.length)),
+      (host.task_counts && (host.task_counts.running || host.task_counts.failed))
+        ? h('span', null, '任务 ', h('b', null, `${host.task_counts.running || 0} 运行`), host.task_counts.failed ? ` · ${host.task_counts.failed} 失败` : '')
+        : null,
+    ),
+    (host.plugin_errors || []).length > 0
+      ? h('div', { className: 'dcu-error' }, `插件告警：${host.plugin_errors.slice(0, 3).join('；')}`)
+      : null,
+    h(
+      'details',
+      { className: 'dcu-fold' },
+      h('summary', null, `明细 · 网络 / 趋势 / 能力 ${agents.length} 条`),
+      h(
+        'div',
+        { style: { display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 8 } },
+        h(
+          'div',
+          { className: 'dcu-kv' },
+          h('span', null, 'mesh ', h('b', null, host.mesh_ip || '—')),
+          h('span', null, '网络 ↓ ', h('b', null, rateText(metrics.net_in_rate, metrics.net_unit)), ' ↑ ', h('b', null, rateText(metrics.net_out_rate, metrics.net_unit))),
+          num(metrics.uptime_s) ? h('span', null, '已运行 ', h('b', null, uptimeText(metrics.uptime_s))) : null,
+        ),
+        kindText ? h('div', { className: 'dcu-muted', style: { fontSize: 11 } }, kindText) : null,
+        h('div', { className: 'dcu-bar-tag', style: { marginTop: 2 } }, 'CPU / 内存 最近采样'),
+        h(Spark, { points: host.history || [], height: 34 }),
+        h(
+          'div',
+          { className: 'dcu-agents' },
+          agents.length === 0
+            ? h('div', { className: 'dcu-muted', style: { fontSize: 12 } }, '该节点没有注册能力')
+            : agents.map((agent) =>
+                h(
+                  'div',
+                  { className: 'dcu-agent', key: agent.cap_id },
+                  h(Dot, { tone: toneOfAgent(agent) }),
+                  h('span', { className: 'dcu-agent-id', title: agent.description || agent.cap_id }, agent.cap_id),
+                  h('span', { className: 'dcu-muted' }, agent.kind),
+                  h('span', { className: 'dcu-muted', title: agent.current_task || '' }, agent.status === 'busy' ? `busy ${agent.current_task || ''}` : agent.status),
+                ),
+              ),
+        ),
+      ),
+    ),
+  )
+}
+
+/* ------------------------------------------------------------------ 首屏：同步摘要（折叠） */
+function SyncSummary({ workspaces }) {
+  if (!workspaces || workspaces.length === 0) {
+    return h('div', { className: 'dcu-run' }, h('div', { className: 'dcu-section-title' }, '同步'), h('div', { className: 'dcu-muted', style: { fontSize: 12 } }, '还没有工作区：在「同步」页或设置页新建一个。'))
+  }
+  return h(
+    'div',
+    { className: 'dcu-run' },
+    h('div', { className: 'dcu-section-title' }, '同步状态', h('span', { className: 'dcu-muted', style: { fontWeight: 400, fontSize: 12 } }, '（每个工作区最近一轮）')),
+    workspaces.map((item) => {
+      const last = item.last || {}
+      const counts = last.counts || {}
+      const status = item.last_status || last.status || null
+      const conflicts = num(counts.conflicts) ?? 0
+      const failed = num(counts.failed) ?? 0
+      const note = [
+        counts.files ? `文件 ${counts.files}` : null,
+        `复制 ${counts.copied ?? 0}`,
+        failed ? `失败 ${failed}` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+      return h(
+        'details',
+        { className: 'dcu-fold', key: item.name },
+        h(
+          'summary',
+          { className: 'dcu-sync-row', style: { listStyle: 'none' } },
+          h('span', { className: 'dcu-sync-name' }, item.name),
+          h('span', null, status ? h('span', { className: `dcu-badge ${status}` }, syncText(status)) : h('span', { className: 'dcu-muted', style: { fontSize: 11 } }, '未同步')),
+          h(
+            'span',
+            { className: 'dcu-sync-note' },
+            conflicts > 0
+              ? h('span', { className: 'dcu-badge conflict' }, `冲突 ${conflicts}`)
+              : h('span', { className: 'dcu-muted' }, '无冲突'),
+            note ? `  ${note}` : '',
+          ),
+          h('span', { className: 'dcu-muted', style: { fontSize: 11 } }, last.finished ? agoText(last.finished) : '—'),
+        ),
+        h(
+          'div',
+          { style: { paddingTop: 6, display: 'flex', flexDirection: 'column', gap: 4 } },
+          h('div', { className: 'dcu-muted', style: { fontSize: 11 } }, `${last.id || '—'} · 策略 ${last.policy || item.policy || '—'} · 第 ${last.attempt || 1} 次 · 状态 ${syncText(status)}`),
+          (last.nodes || []).length === 0
+            ? h('div', { className: 'dcu-muted', style: { fontSize: 11.5 } }, '没有节点级记录')
+            : (last.nodes || []).map((node) =>
+                h(
+                  'div',
+                  { className: 'dcu-sync-note', key: node.node_id },
+                  `${node.node_id} · ${syncText(node.status)} · 清单 ${node.manifest_files ?? '—'} · 写入 ${node.written ?? '—'}${(node.errors || []).length ? ` · ${(node.errors || []).join('；')}` : ''}`,
+                ),
+              ),
+        ),
+      )
+    }),
+  )
+}
+
+/* ------------------------------------------------------------------ 总览 */
+function Overview({ data, error, history }) {
+  if (error && !data) return h('div', { className: 'dcu-error' }, error)
+  if (!data) return h('div', { className: 'dcu-muted' }, '读取中…')
+  const hosts = (data.items || []).map((host) => ({ ...host, history: mergeHistory(host.history, history[host.node_id]) }))
+  return h(
+    'div',
+    { style: { display: 'flex', flexDirection: 'column', gap: 12 } },
+    h(HealthStrip, { data }),
+    error ? h('div', { className: 'dcu-error' }, error) : null,
+    h('div', { className: 'dcu-charts' }, h(ResourceBars, { hosts }), h(QueueCard, { queue: data.queue })),
+    h(SyncSummary, { workspaces: data.workspaces }),
+    h('div', { className: 'dcu-section-title' }, '节点', h('span', { className: 'dcu-muted', style: { fontWeight: 400, fontSize: 12 } }, '（明细默认折叠）')),
+    hosts.length === 0
+      ? h('div', { className: 'dcu-muted' }, '没有节点被注册。')
+      : h('div', { className: 'dcu-cards' }, hosts.map((host) => h(HostCard, { key: host.node_id, host }))),
   )
 }
 
@@ -184,6 +724,8 @@ function RouterBox({ onAfter }) {
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
+  // 首屏只放状态与图表，所以 Router 默认收起；标题栏保留入口 + 一句摘要。
+  const [collapsed, setCollapsed] = useState(true)
   const logRef = useRef(null)
 
   const load = useCallback(async () => {
@@ -203,6 +745,27 @@ function RouterBox({ onAfter }) {
     const node = logRef.current
     if (node) node.scrollTop = node.scrollHeight
   }, [items])
+
+  const tokens = (item) => {
+    const usage = item && item.usage
+    if (!usage) return null
+    const input = num(usage.inputTokens)
+    const output = num(usage.outputTokens)
+    if (input === null && output === null) return null
+    return `in ${input ?? 0} / out ${output ?? 0} tokens`
+  }
+
+  // 收起时的一句话摘要：轮数 + 最后一轮谁说的 + 第一行（多行输出压成一行并截断）。
+  const lastItem = items.length ? items[items.length - 1] : null
+  const firstLine = lastItem
+    ? String(lastItem.text || '')
+        .split('\n')
+        .map((line) => line.trim())
+        .find(Boolean) || ''
+    : ''
+  const lastLine = lastItem
+    ? `${items.length} 轮 · ${lastItem.role === 'user' ? '你' : 'Router'}：${firstLine.replace(/\s+/g, ' ').slice(0, 44)}${firstLine.length > 44 ? '…' : ''}`
+    : '点右侧展开对话'
 
   const send = async () => {
     const text = draft.trim()
@@ -224,7 +787,7 @@ function RouterBox({ onAfter }) {
   return h(
     'section',
     {
-      className: 'dcu-router',
+      className: `dcu-router${collapsed ? ' collapsed' : ''}`,
       'aria-label': 'Router 对话框',
       // 内联背景：主题插件（dream skin）有一条 `[data-dsh-dream-skin-composer]{background:transparent}`
       // 的规则会盖掉同名 class 的 background，而 Router 板块必须保持深色才和普通会话拉开距离。
@@ -235,137 +798,87 @@ function RouterBox({ onAfter }) {
       { className: 'dcu-router-head' },
       h(Dot, { tone: busy ? 'warn' : 'ok' }),
       h('span', { className: 'dcu-router-title' }, 'Router · 常驻'),
-      h('span', { className: 'dcu-router-tag' }, '直接对话驱动全部 worker（不是普通会话）'),
+      h('span', { className: 'dcu-router-tag' }, collapsed ? lastLine : '真实 LLM 会话 · 只会调 cluster_* 工具（没有 shell）'),
       h('span', { className: 'dcu-spacer' }),
-      h('button', { className: 'dcu-btn', style: { background: 'transparent', color: '#f0c07a', borderColor: 'rgba(201,139,58,.45)' }, onClick: load, disabled: busy }, '刷新记录'),
+      h('button', { className: 'dcu-btn', style: { background: 'transparent', color: '#f0c07a', borderColor: 'rgba(201,139,58,.45)' }, onClick: () => setCollapsed(!collapsed) }, collapsed ? '展开对话' : '收起'),
+      collapsed ? null : h('button', { className: 'dcu-btn', style: { background: 'transparent', color: '#f0c07a', borderColor: 'rgba(201,139,58,.45)' }, onClick: load, disabled: busy }, '刷新记录'),
     ),
-    h(
-      'div',
-      { className: 'dcu-router-log', ref: logRef },
-      items.length === 0
-        ? h('div', { className: 'dcu-turn-meta' }, '还没有对话。试试：status / hosts / all skill:uppercase@1.0.0 {"text":"hi"} / sync demo')
-        : items.map((item, index) =>
-            h(
-              'div',
-              { className: 'dcu-turn', key: `${item.ts}-${index}` },
-              h('div', { className: item.role === 'user' ? 'dcu-turn-user' : 'dcu-turn-reply' }, item.role === 'user' ? `› ${item.text}` : item.text),
-              item.actions && item.actions.length > 0
-                ? h(
-                    'div',
-                    { className: 'dcu-actions' },
-                    item.actions.map((action, i) =>
-                      h(
-                        'span',
-                        { className: 'dcu-action', key: i, title: action.error || '' },
-                        `${action.kind}${action.node_id ? `@${action.node_id}` : ''}${action.status ? ` · ${action.status}` : ''}${action.elapsed_ms ? ` · ${Math.round(action.elapsed_ms)}ms` : ''}`,
-                      ),
-                    ),
-                  )
-                : null,
-              item.elapsed_ms ? h('div', { className: 'dcu-turn-meta' }, `用时 ${item.elapsed_ms}ms`) : null,
-            ),
-          ),
-    ),
-    error ? h('div', { className: 'dcu-error', style: { margin: '0 13px 8px' } }, error) : null,
-    h(
-      'div',
-      { className: 'dcu-router-input' },
-      h('textarea', {
-        value: draft,
-        placeholder: '给 Router 下指令（Enter 发送，Shift+Enter 换行）',
-        onChange: (event) => setDraft(event.target.value),
-        onKeyDown: (event) => {
-          if (event.key === 'Enter' && !event.shiftKey) {
-            event.preventDefault()
-            send()
-          }
-        },
-      }),
-      h('button', { className: 'dcu-router-send', onClick: send, disabled: busy || !draft.trim() }, busy ? '发送中…' : '发送'),
-    ),
-    h('div', { className: 'dcu-hint' }, 'run = 交给 L2 路由挑节点；all = 每个持有该能力的节点各跑一次；on <node> = 指定节点；sync = 触发工作区同步'),
-  )
-}
-
-/* ------------------------------------------------------------------ 主机 */
-function HostCard({ host }) {
-  const [open, setOpen] = useState(true)
-  const metrics = host.metrics || {}
-  return h(
-    'article',
-    { className: 'dcu-card' },
-    h(
-      'div',
-      { className: 'dcu-card-head' },
-      h(Dot, { tone: toneOfNode(host) }),
-      h('span', { className: 'dcu-node', title: host.node_id }, host.node_id),
-      h('span', { className: 'dcu-chip' }, host.os || '?'),
-      host.role === 'router' ? h('span', { className: 'dcu-chip' }, 'router') : null,
-      h('span', { className: 'dcu-spacer' }),
-      h('button', { className: 'dcu-btn', onClick: () => setOpen(!open) }, open ? `收起 ${host.agent_count}` : `展开 ${host.agent_count}`),
-    ),
-    h(
-      'div',
-      { className: 'dcu-metrics' },
-      h(Meter, { label: 'CPU', value: metrics.cpu_percent }),
-      h(Meter, { label: '内存', value: metrics.mem_percent, detail: `${Math.round(num(metrics.mem_used_mb) || 0)}/${Math.round(num(metrics.mem_total_mb) || 0)}MB` }),
-    ),
-    h(
-      'div',
-      { className: 'dcu-kv' },
-      h('span', null, '网络 ↓', h('b', null, rateText(metrics.net_in_rate, metrics.net_unit))),
-      h('span', null, '↑', h('b', null, rateText(metrics.net_out_rate, metrics.net_unit))),
-      h('span', null, 'worker ', h('b', null, `${num(metrics.workers) ?? 0}/${num(metrics.max_workers) ?? '?'}`)),
-      h('span', null, '采样 ', h('b', null, agoText(metrics.ts))),
-      h('span', null, 'mesh ', h('b', null, host.mesh_ip || '—')),
-    ),
-    (host.plugin_errors || []).length > 0
-      ? h('div', { className: 'dcu-error' }, `插件告警：${host.plugin_errors.slice(0, 3).join('；')}`)
-      : null,
-    open
-      ? h(
+    collapsed
+      ? null
+      : h(
           'div',
-          { className: 'dcu-agents' },
-          host.agents.length === 0
-            ? h('div', { className: 'dcu-muted', style: { fontSize: 12 } }, '该节点没有注册 agent')
-            : host.agents.map((agent) =>
+          { className: 'dcu-router-log', ref: logRef },
+          items.length === 0
+            ? h('div', { className: 'dcu-turn-meta' }, '直接说话就走模型（kali 现在负载怎么样 / 在 kali 上跑 skill:uppercase，文本 hello）；命令走规则、不调模型（status / hosts / all skill:uppercase@1.0.0 {"text":"hi"}）')
+            : items.map((item, index) =>
                 h(
                   'div',
-                  { className: 'dcu-agent', key: agent.cap_id },
-                  h(Dot, { tone: toneOfAgent(agent) }),
-                  h('span', { className: 'dcu-agent-id', title: agent.description || agent.cap_id }, agent.cap_id),
-                  h('span', { className: 'dcu-muted' }, agent.kind),
-                  h('span', { className: 'dcu-muted', title: agent.current_task || '' }, agent.status === 'busy' ? `busy ${agent.current_task || ''}` : agent.status),
+                  { className: 'dcu-turn', key: `${item.ts}-${index}` },
+                  h('div', { className: item.role === 'user' ? 'dcu-turn-user' : 'dcu-turn-reply' }, item.role === 'user' ? `› ${item.text}` : item.text),
+                  item.actions && item.actions.length > 0
+                    ? h(
+                        'div',
+                        { className: 'dcu-actions' },
+                        item.actions.map((action, i) =>
+                          h(
+                            'span',
+                            {
+                              className: 'dcu-action',
+                              key: i,
+                              // 悬停看参数与结果：LLM 的工具调用把 args/result 一起带过来了。
+                              title: [action.error, action.args ? `args ${typeof action.args === 'string' ? action.args : JSON.stringify(action.args)}` : '', action.result ? `→ ${action.result}` : '']
+                                .filter(Boolean)
+                                .join('\n'),
+                            },
+                            action.kind === 'tool'
+                              ? `${action.name || 'tool'} · ${action.status}${action.elapsed_ms ? ` · ${Math.round(action.elapsed_ms)}ms` : ''}`
+                              : `${action.kind}${action.node_id ? `@${action.node_id}` : ''}${action.status ? ` · ${action.status}` : ''}${action.elapsed_ms ? ` · ${Math.round(action.elapsed_ms)}ms` : ''}`,
+                          ),
+                        ),
+                      )
+                    : null,
+                  item.elapsed_ms || tokens(item)
+                    ? h(
+                        'div',
+                        { className: 'dcu-turn-meta' },
+                        [
+                          item.elapsed_ms ? `${item.source === 'llm' ? `LLM${item.model ? ` · ${item.model}` : ''} · ` : '规则 · '}用时 ${Math.round(item.elapsed_ms)}ms` : null,
+                          tokens(item),
+                        ]
+                          .filter(Boolean)
+                          .join(' · '),
+                      )
+                    : null,
                 ),
               ),
-        )
-      : null,
+        ),
+    collapsed ? null : error ? h('div', { className: 'dcu-error', style: { margin: '0 13px 8px' } }, error) : null,
+    collapsed
+      ? null
+      : h(
+          'div',
+          { className: 'dcu-router-input' },
+          h('textarea', {
+            value: draft,
+            placeholder: '给 Router 下指令（Enter 发送，Shift+Enter 换行）',
+            onChange: (event) => setDraft(event.target.value),
+            onKeyDown: (event) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault()
+                send()
+              }
+            },
+          }),
+          h('button', { className: 'dcu-router-send', onClick: send, disabled: busy || !draft.trim() }, busy ? '发送中…' : '发送'),
+        ),
+    collapsed ? null : h('div', { className: 'dcu-hint' }, 'run = 交给 L2 路由挑节点；all = 每个持有该能力的节点各跑一次；on <node> = 指定节点；sync = 触发工作区同步'),
   )
 }
 
-function HostsView({ data, error }) {
-  if (error && !data) return h('div', { className: 'dcu-error' }, error)
-  if (!data) return h('div', { className: 'dcu-muted' }, '读取中…')
-  return h(
-    'div',
-    { style: { display: 'flex', flexDirection: 'column', gap: 12 } },
-    h(
-      'div',
-      { className: 'dcu-summary' },
-      h('span', { className: 'dcu-chip' }, `节点 ${data.summary.alive}/${data.summary.nodes}`),
-      h('span', { className: 'dcu-chip' }, `agents ${data.summary.agents}`),
-      h('span', { className: 'dcu-chip' }, `运行中任务 ${data.summary.tasks_running}`),
-      h('span', { className: 'dcu-chip', title: data.upstream.control }, `控制面 ${data.upstream.rtt_ms}ms`),
-      data.router && data.router.node_id ? h('span', { className: 'dcu-chip' }, `router ${data.router.node_id} · quorum ${data.router.quorum}`) : null,
-    ),
-    error ? h('div', { className: 'dcu-error' }, error) : null,
-    h('div', { className: 'dcu-cards' }, data.items.map((host) => h(HostCard, { key: host.node_id, host }))),
-  )
-}
-
-/* ------------------------------------------------------------------ 同步 */
+/* ------------------------------------------------------------------ 同步（详细管理页） */
 function runBadge(status) {
-  return h('span', { className: `dcu-badge ${status || ''}` }, status || '?')
+  // 英文枚举只留在接口里；界面上统一成中文，否则同一列里「完成」和 done 混着读。
+  return h('span', { className: `dcu-badge ${status || ''}` }, syncText(status))
 }
 
 function SyncView({ onChanged }) {
@@ -547,7 +1060,7 @@ function SyncView({ onChanged }) {
             { className: 'dcu-run-head' },
             h('b', null, selected.workspace),
             runBadge(selected.status),
-            h('span', { className: 'dcu-muted', style: { fontSize: 11.5 } }, `${selected.id} · 第 ${selected.attempt} 次 · 策略 ${selected.policy}`),
+            h('span', { className: 'dcu-muted', style: { fontSize: 11.5 } }, `${selected.id} · 第 ${selected.attempt} 次 · 策略 ${selected.policy} · 耗时 ${durationText((selected.finished || selected.updated || 0) - (selected.created || 0))}`),
             h('span', { className: 'dcu-spacer' }),
             h('span', { className: 'dcu-chip' }, `文件 ${selected.counts.files}`),
             h('span', { className: 'dcu-chip' }, `已一致 ${selected.counts.in_sync}`),
@@ -558,54 +1071,64 @@ function SyncView({ onChanged }) {
           ),
           selected.error ? h('div', { className: 'dcu-error' }, selected.error) : null,
           h(
-            'table',
-            { className: 'dcu-table' },
-            h('thead', null, h('tr', null, h('th', null, '节点'), h('th', null, '状态'), h('th', null, '清单文件'), h('th', null, '写入'), h('th', null, '错误'))),
+            'details',
+            { className: 'dcu-fold' },
+            h('summary', null, `逐节点结果 ${Object.keys(selected.nodes || {}).length}`),
             h(
-              'tbody',
-              null,
-              Object.values(selected.nodes || {}).map((node) =>
-                h(
-                  'tr',
-                  { key: node.node_id },
-                  h('td', null, node.node_id),
-                  h('td', null, node.status),
-                  h('td', null, node.manifest_files),
-                  h('td', null, node.written),
-                  h('td', { className: 'dcu-mono' }, (node.errors || []).slice(0, 2).join('；') || '—'),
+              'table',
+              { className: 'dcu-table' },
+              h('thead', null, h('tr', null, h('th', null, '节点'), h('th', null, '状态'), h('th', null, '清单文件'), h('th', null, '写入'), h('th', null, '错误'))),
+              h(
+                'tbody',
+                null,
+                Object.values(selected.nodes || {}).map((node) =>
+                  h(
+                    'tr',
+                    { key: node.node_id },
+                    h('td', null, node.node_id),
+                    h('td', null, node.status),
+                    h('td', null, node.manifest_files),
+                    h('td', null, node.written),
+                    h('td', { className: 'dcu-mono' }, (node.errors || []).slice(0, 2).join('；') || '—'),
+                  ),
                 ),
               ),
             ),
           ),
           h(
-            'table',
-            { className: 'dcu-table' },
-            h('thead', null, h('tr', null, h('th', null, '文件'), h('th', null, '结果'), h('th', null, '来源'), h('th', null, '目标'), h('th', null, '错误'))),
+            'details',
+            { className: 'dcu-fold' },
+            h('summary', null, `逐文件结果 ${(selected.items || []).length}`),
             h(
-              'tbody',
-              null,
-              (selected.items || []).map((item) =>
-                h(
-                  'tr',
-                  { key: item.path },
-                  h('td', { className: 'dcu-mono' }, item.path),
-                  h('td', null, runBadge(item.status)),
-                  h('td', null, item.from || '—'),
-                  h('td', null, (item.to || []).join(',') || '—'),
-                  h('td', { className: 'dcu-mono' }, item.error || '—'),
+              'table',
+              { className: 'dcu-table' },
+              h('thead', null, h('tr', null, h('th', null, '文件'), h('th', null, '结果'), h('th', null, '来源'), h('th', null, '目标'), h('th', null, '错误'))),
+              h(
+                'tbody',
+                null,
+                (selected.items || []).map((item) =>
+                  h(
+                    'tr',
+                    { key: item.path },
+                    h('td', { className: 'dcu-mono' }, item.path),
+                    h('td', null, runBadge(item.status)),
+                    h('td', null, item.from || '—'),
+                    h('td', null, (item.to || []).join(',') || '—'),
+                    h('td', { className: 'dcu-mono' }, item.error || '—'),
+                  ),
                 ),
               ),
             ),
           ),
           (selected.conflicts || []).length > 0
             ? h(
-                'div',
-                { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
-                h('div', { className: 'dcu-section-title' }, `冲突 ${selected.conflicts.length}`),
+                'details',
+                { className: 'dcu-fold' },
+                h('summary', null, `冲突 ${selected.conflicts.length}`),
                 selected.conflicts.map((conflict) =>
                   h(
                     'div',
-                    { key: conflict.path, className: 'dcu-mono', style: { fontSize: 11.5 } },
+                    { key: conflict.path, className: 'dcu-mono', style: { fontSize: 11.5, paddingTop: 6 } },
                     `${conflict.path} → 由 ${conflict.winner} 胜出（策略 ${conflict.policy}）`,
                     h('div', { className: 'dcu-muted' }, Object.entries(conflict.sha_by_node || {}).map(([node, sha]) => `${node}:${String(sha).slice(0, 12)}`).join('  ')),
                   ),
@@ -613,7 +1136,7 @@ function SyncView({ onChanged }) {
               )
             : null,
           (selected.log || []).length > 0
-            ? h('details', null, h('summary', { className: 'dcu-muted', style: { fontSize: 12, cursor: 'pointer' } }, '同步日志'), h('pre', { className: 'dcu-mono', style: { margin: '6px 0 0', whiteSpace: 'pre-wrap', maxHeight: 180, overflow: 'auto' } }, selected.log.join('\n')))
+            ? h('details', { className: 'dcu-fold' }, h('summary', null, '同步日志'), h('pre', { className: 'dcu-mono', style: { margin: '6px 0 0', whiteSpace: 'pre-wrap', maxHeight: 180, overflow: 'auto' } }, selected.log.join('\n')))
             : null,
         )
       : h('div', { className: 'dcu-muted' }, '还没有同步记录：新建一个工作区就会自动跑第一轮。'),
@@ -622,14 +1145,24 @@ function SyncView({ onChanged }) {
 
 /* ------------------------------------------------------------------ 主面板 */
 function ClusterPanel() {
-  const [tab, setTab] = useState('hosts')
+  const [tab, setTab] = useState('overview')
   const [hosts, setHosts] = useState(null)
   const [error, setError] = useState(null)
   const [tick, setTick] = useState(0)
+  // 本地累积的历史：服务端旧版本没有 history 字段时，客户端自己也能攒出趋势。
+  const localHistory = useRef({})
 
   const loadHosts = useCallback(async () => {
     try {
       const data = await getJSON('/hosts')
+      for (const host of data.items || []) {
+        const metrics = host.metrics || {}
+        const row = { ts: num(metrics.ts) || Date.now() / 1000, cpu: num(metrics.cpu_percent), mem: num(metrics.mem_percent) }
+        if (row.cpu === null && row.mem === null) continue
+        const series = localHistory.current[host.node_id] || (localHistory.current[host.node_id] = [])
+        if (!series.length || Math.abs(series[series.length - 1].ts - row.ts) >= 1) series.push(row)
+        if (series.length > 60) series.splice(0, series.length - 60)
+      }
       setHosts(data)
       setError(null)
     } catch (failure) {
@@ -651,18 +1184,18 @@ function ClusterPanel() {
       'header',
       { className: 'dcu-head' },
       h('span', { className: 'dcu-title' }, 'Cluster'),
-      h('span', { className: 'dcu-sub' }, hosts ? `${hosts.summary.alive}/${hosts.summary.nodes} 节点 · ${hosts.summary.agents} agents` : '读取中…'),
+      h('span', { className: 'dcu-sub' }, hosts ? `${(hosts.summary || {}).alive ?? '—'}/${(hosts.summary || {}).nodes ?? '—'} 节点 · ${(hosts.summary || {}).agents ?? '—'} 能力 · 每 5s 刷新` : '读取中…'),
       h('span', { className: 'dcu-spacer' }),
       h('button', { className: 'dcu-btn', onClick: () => { setTick(tick + 1); loadHosts() } }, '刷新'),
     ),
-    h(RouterBox, { onAfter: () => { setTab('hosts'); loadHosts() } }),
+    h(RouterBox, { onAfter: () => { setTab('overview'); loadHosts() } }),
     h(
       'div',
       { className: 'dcu-tabs' },
-      h('button', { className: 'dcu-tab', 'data-active': String(tab === 'hosts'), onClick: () => setTab('hosts') }, '主机与 agents'),
+      h('button', { className: 'dcu-tab', 'data-active': String(tab === 'overview'), onClick: () => setTab('overview') }, '总览'),
       h('button', { className: 'dcu-tab', 'data-active': String(tab === 'sync'), onClick: () => setTab('sync') }, '工作区同步'),
     ),
-    h('div', { className: 'dcu-body' }, tab === 'hosts' ? h(HostsView, { data: hosts, error }) : h(SyncView, { key: tick, onChanged: loadHosts })),
+    h('div', { className: 'dcu-body' }, tab === 'overview' ? h(Overview, { data: hosts, error, history: localHistory.current }) : h(SyncView, { key: tick, onChanged: loadHosts })),
   )
 }
 
@@ -670,6 +1203,7 @@ function ClusterPanel() {
 function ClusterSettings({ close, openPanel }) {
   const [workspaces, setWorkspaces] = useState([])
   const [nodes, setNodes] = useState([])
+  const [health, setHealth] = useState(null)
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
   const [name, setName] = useState('')
@@ -678,9 +1212,10 @@ function ClusterSettings({ close, openPanel }) {
 
   const load = useCallback(async () => {
     try {
-      const data = await getJSON('/workspaces')
+      const [data, info] = await Promise.all([getJSON('/workspaces'), getJSON('/health').catch(() => null)])
       setWorkspaces(data.items || [])
       setNodes(data.nodes || [])
+      if (info) setHealth(info)
       setError(null)
     } catch (failure) {
       setError(String(failure.message || failure))
@@ -697,9 +1232,24 @@ function ClusterSettings({ close, openPanel }) {
     setBusy(true)
     setError(null)
     try {
+      // 一个入口做两件事：建工作区（/api/workspaces）之后立刻同步（/api/workspace/sync）。
       const data = await postJSON('/workspaces', { name: name.trim(), policy, seed: true })
       setCreated(data)
       setName('')
+      await load()
+    } catch (failure) {
+      setError(String(failure.message || failure))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const sync = async (workspaceName) => {
+    setBusy(true)
+    setError(null)
+    try {
+      const data = await postJSON('/workspace/sync', { workspace: workspaceName })
+      setCreated({ workspace: { name: workspaceName }, run: data.run })
       await load()
     } catch (failure) {
       setError(String(failure.message || failure))
@@ -715,6 +1265,33 @@ function ClusterSettings({ close, openPanel }) {
       h('span', { className: 'dcu-muted', style: { fontWeight: 400, fontSize: 12 } }, '一个工作区 = 每个节点上一个目录，内容保持一致')),
     h('div', { className: 'dcu-form' }, h('button', { className: 'dcu-btn', onClick: load }, '刷新列表')),
     error ? h('div', { className: 'dcu-error' }, error) : null,
+    // 连接信息：网关自报的控制面地址 / 证书来源 / token 位置，只读展示（真实取值来自 GET /api/health）。
+    h(
+      'div',
+      { className: 'dcu-card' },
+      h(
+        'div',
+        { className: 'dcu-card-head' },
+        h(Dot, { tone: health ? 'ok' : 'bad' }),
+        h('b', { className: 'dcu-node' }, '连接信息'),
+        h('span', { className: 'dcu-spacer' }),
+        h('span', { className: 'dcu-muted', style: { fontSize: 11 } }, health ? `网关更新 ${agoText(health.ts)}` : '读不到网关'),
+      ),
+      health
+        ? h(
+            'div',
+            { className: 'dcu-kv', style: { flexDirection: 'column', gap: 3, alignItems: 'flex-start' } },
+            h('span', null, '控制面 ', h('b', { className: 'dcu-mono' }, health.control || '—')),
+            h('span', null, '证书 ', h('b', { className: 'dcu-mono' }, health.tls && health.tls.enabled ? `${health.tls.dir || '—'} · ${health.tls.cert_name || '—'}` : '未启用 mTLS')),
+            h('span', null, 'token ', h('b', { className: 'dcu-mono' }, health.token_file || '—')),
+            h('span', null, 'state ', h('b', { className: 'dcu-mono' }, health.state_dir || '—')),
+          )
+        : h(
+            'div',
+            { className: 'dcu-muted', style: { fontSize: 12 } },
+            '网关没跑或 token 读不到。启动：python -m cluster ui --control https://127.0.0.1:18100 --port 18150 --tls-dir .state\\tls --cert-name win',
+          ),
+    ),
     h(
       'div',
       { className: 'dcu-card' },
@@ -735,7 +1312,7 @@ function ClusterSettings({ close, openPanel }) {
       ),
       created && created.run
         ? h('div', { className: 'dcu-muted', style: { fontSize: 12 } },
-            `已创建 ${created.workspace.name}，首轮同步 ${created.run.id} 正在跑：${Object.entries(created.workspace.roots || {}).map(([node, root]) => `${node}→${root}`).join('，')}`)
+            `已创建 ${created.workspace.name}；首轮同步 ${created.run.id}（${created.run.status}）：${Object.entries(created.workspace.roots || {}).map(([node, root]) => `${node}→${root}`).join('，')}`)
         : null,
     ),
     workspaces.length === 0
@@ -751,6 +1328,7 @@ function ClusterSettings({ close, openPanel }) {
               runBadge(item.last_status),
               h('span', { className: 'dcu-spacer' }),
               h('span', { className: 'dcu-muted', style: { fontSize: 11.5 } }, `策略 ${item.policy}`),
+              h('button', { className: 'dcu-btn', onClick: () => sync(item.name), disabled: busy }, '同步'),
             ),
             h('div', { className: 'dcu-roots' }, Object.entries(item.roots || {}).map(([nodeId, root]) => h('span', { key: nodeId }, `${nodeId} → ${root}`))),
             h('div', { className: 'dcu-kv' }, h('span', null, '创建 ', h('b', null, new Date((item.created || 0) * 1000).toLocaleString())), h('span', null, '最近 ', h('b', null, item.last_run || '—'))),
@@ -798,3 +1376,4 @@ function apply(ctx) {
     return module.exports
   },
 })
+;

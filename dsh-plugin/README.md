@@ -131,9 +131,48 @@ token 解析优先级：`config.token` → `CLUSTER_UI_TOKEN` → `config.tokenF
 
 认不出的文本会明确回「没看懂」+ 指令表，不会编一个结果。
 
+### Router 走真实 LLM 会话（1.1.0 起）
+
+从 1.1.0 起，**首词命中上表指令**的消息仍然走规则快路径（不调模型）；其余消息交给一个真实的 DSH
+会话——它就是普通会话，可见、可恢复、有历史，preset 是 `cluster-router`。
+
+```
+浏览器 ─ POST /cluster-ui/api/router/message
+   ├─ 首词命中快路径动词 → 网关 /api/router/message（L2/L4 真实执行，审计记 kind=fast）
+   └─ 否则 → sessions.prompt(cluster-router 会话) → 模型只能调 4 个工具
+            → 审计 router-audit.jsonl + 回写 /api/router/log（面板轮询）
+```
+
+工具白名单（注册在会话的 agent ctx 上，宿主其余 383 个全局工具被 `restrict({deny})` 挡掉）：
+
+| 工具 | 类型 | 说明 |
+| --- | --- | --- |
+| `cluster_hosts` | 只读 | 节点 + 真实指标（cpu/内存/worker）+ agent 数 |
+| `cluster_status` | 只读 | 最近任务、能力注册表、工作区与同步状态 |
+| `cluster_dispatch` | 写 | 下发一次能力调用；`node` 指定单节点，`fanout` 每个持有者各跑一次 |
+| `cluster_sync` | 写（危险） | 工作区同步；**必须两段式确认**，未确认时拒绝 |
+
+安全边界：
+
+- preset `cluster-router` 里没有 shell、没有文件工具、没有子代理、没有 MCP——模型拿不到命令执行能力。
+- 网关侧再校验一次：`cap_id` / 节点 / 工作区必须真实存在，否则 400 并列出可选项。
+- `cluster_sync` 的 `confirm:true` 只有在「上一轮问过 + 用户这一轮明确确认」时才被接受；
+  用户在同一句里写「强制/覆盖」不算确认。即使用户催，先问一句再执行。
+- 限流：10 秒内最多 3 次模型调用（429 + 还要等几秒）。
+- 审计：`<cluster>/.state/ui/router-audit.jsonl`，一行一次决策（输入摘要、工具、参数、结果、耗时、usage）。
+  快路径记 `kind:"fast"` 且没有 `model`/`usage` 字段，可以直接用它证明「这条没进模型」。
+- 系统提示每轮前刷新一份**精简集群快照**（节点/指标/能力/任务数/同步状态），不塞全量 JSON。
+
+会话状态落在 `<cluster>/.state/ui/cluster-router.json`（`sessionId` + 上一版会话 id），插件重载后沿用；
+换 id 时旧会话会被改名成 `cluster-router（旧）`，面板里不会两个同名会话打架。
+诊断端点：`GET /cluster-ui/api/router/diag`（会话 id、可见工具、是否收敛、快照、限流余量）。
+
 ## 已知限制（重要，别跳过）
 
-- **Router 是规则路由器，不是 LLM**。按上面的指令表解析后真实下发，不会自由发挥。「让 LLM 决定派给谁」当前没做。
+- **Router 的 LLM 部分只能调 `cluster_*` 工具**：它不会替你写文件、跑 shell，也不可能「顺手」做别的事。
+- **插件重载会撤掉再重装工具**（disposer 挂在插件 ctx 上）：每次重载后第一轮对话前会重新注册，
+  代价是那一轮的工具声明重新发一遍；同一会话的注册是幂等的。
+- **确认闸门记在内存里**：插件重载会清空待确认状态（重载后必须先问再确认，宁可多问一次）。
 - **同步只覆盖新增/更新，不传播删除**（对端多出来的文件不会被删）。策略只有 `newest` / `prefer:<node>`，没有三方合并。
 - **单文件读上限 2MB**（`skill:ws` 的 `max_bytes`），超了记 `failed` 并写明原因；单节点清单上限 5000 个文件。
 - **网络指标单位随平台**：Windows 是 `packets/s`（`iphlpapi` 只给报文数），Linux 是 `bytes/s`；面板按单位显示，不换算。
