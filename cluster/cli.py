@@ -241,6 +241,8 @@ def cmd_ui(args) -> int:
         linux_root_base=args.linux_root_base,
         wait_seconds=args.wait,
         allow_origins=args.allow_origin or None,
+        tls_dir=args.tls_dir,
+        cert_name=args.cert_name,
     ).start()
     print(f"[ui] token file: {Path(args.state_dir) / 'token'}")
     print(f"[ui] health: http://{args.host}:{gateway.port}/api/health")

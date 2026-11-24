@@ -17,7 +17,12 @@
     GET  /api/agents                -> 扁平 agents 列表
     GET  /api/tasks?limit=20
     GET  /api/router/transcript?limit=50
-    POST /api/router/message        {"text": "..."}      -> 对话驱动任务
+    POST /api/router/message        {"text": "..."}      -> 对话驱动任务（确定性快路径）
+    GET  /api/router/snapshot                            -> 精简集群快照（LLM 系统提示用）
+    GET  /api/router/status                              -> 任务/能力/同步状态（cluster_status 工具用）
+    POST /api/router/dispatch       {"cap_id", "payload", "node", "fanout"}    -> 结构化下发（写）
+    POST /api/router/sync           {"workspace", "policy", "confirm": true}   -> 工作区同步（写，需二次确认）
+    POST /api/router/log            {"items": [...]}     -> LLM 回合写回面板 transcript
     GET  /api/workspaces
     POST /api/workspaces            {"name": "...", "policy": "newest", "seed": true}
     GET  /api/workspaces/<name>/tree?depth=1             -> 各节点文件清单（真实 manifest）
@@ -38,7 +43,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from . import httpjson
+from . import httpjson, uisummary
 from .httpjson import TLSOptions
 from .l3_capability import Capability
 from .l5_orchestrator import Orchestrator
@@ -176,9 +181,14 @@ class UiGateway:
         linux_root_base: str = "~/cluster-test/workspaces",
         wait_seconds: float = 8.0,
         allow_origins: list[str] | None = None,
+        tls_dir: str | None = None,
+        cert_name: str | None = None,
     ) -> None:
         self.control = control.rstrip("/")
         self.tls = tls
+        # 只用于在设置页如实展示（目录名 + 证书名），不参与任何认证逻辑。
+        self._tls_dir = tls_dir
+        self._cert_name = cert_name
         self.token = token
         self.host = host
         self.port = port
@@ -194,6 +204,12 @@ class UiGateway:
         self._ledger_cache: tuple[float, dict] = (0.0, {})
         self._url_cache: dict[str, tuple[str, float]] = {}
         self._control_cache: tuple[float, dict] = (0.0, {})
+        # 首屏趋势图的数据源：网关自己每 N 秒采一次，环形缓冲只留在内存里。
+        # 不落盘（重启就是从零开始），也不进控制面（高频指标不该占控制面 HTTP）。
+        self.history: dict[str, list[dict]] = {}
+        self.history_limit = 120
+        self._history_thread: threading.Thread | None = None
+        self._history_stop = threading.Event()
         self.transcript_path = self.state_dir / "router.json"
         self.transcript: list[dict] = self._load_transcript()
         self.sync = SyncEngine(
@@ -224,13 +240,52 @@ class UiGateway:
         self._server = _Server(self.host, self.port, self.dispatch, self.allow_origins)
         self._server.start()
         self.port = self._server.port
+        self._start_history()
         print(f"[ui] gateway listening on http://{self.host}:{self.port} -> {self.control}", flush=True)
         return self
 
     def stop(self) -> None:
+        self._history_stop.set()
+        if self._history_thread is not None:
+            self._history_thread.join(timeout=3)
+            self._history_thread = None
         if self._server is not None:
             self._server.stop()
             self._server = None
+
+    # ------------------------------------------------------------ 采样历史
+    def _start_history(self, interval: float = 5.0) -> None:
+        """后台每 interval 秒记一次各节点 CPU/内存，给首屏趋势图。
+
+        刻意不复用 hosts_view：那个会顺带算 agents/tasks/插件错误，开销比这里需要的大。
+        采不到（控制面抖动）就跳过这一拍，历史里留个空档，不要伪造 0。
+        """
+        if self._history_thread is not None:
+            return
+
+        def loop() -> None:
+            while not self._history_stop.wait(interval):
+                try:
+                    state = self.control_state(fresh=True)
+                except Exception:  # noqa: BLE001 - 采样线程不能带崩网关
+                    continue
+                for node in state.get("nodes") or []:
+                    metrics = node.get("metrics") or {}
+                    uisummary.push_point(
+                        self.history,
+                        str(node.get("node_id")),
+                        {
+                            "ts": metrics.get("ts") or time.time(),
+                            "cpu": metrics.get("cpu_percent"),
+                            "mem": metrics.get("mem_percent"),
+                            "workers": metrics.get("workers"),
+                        },
+                        self.history_limit,
+                    )
+
+        self._history_stop.clear()
+        self._history_thread = threading.Thread(target=loop, name="cluster-ui-history", daemon=True)
+        self._history_thread.start()
 
     # ------------------------------------------------------------ 上游
     def control_state(self, fresh: bool = False) -> dict:
@@ -414,15 +469,21 @@ class UiGateway:
                     "metrics_age_s": round(time.time() - float(metrics.get("ts") or 0), 1) if metrics.get("ts") else None,
                     "agents": agents.get(node_id, []),
                     "agent_count": len(agents.get(node_id, [])),
+                    # 首屏趋势图：网关自己采的最近若干点（不含本次，本次在 metrics 里）。
+                    "history": uisummary.history_of(self.history, node_id),
                     "plugin_errors": node.get("plugin_errors") or [],
                     "task_counts": {
-                        "running": sum(1 for t in tasks if t.get("node_id") == node_id and t.get("status") == "running"),
+                        "running": sum(1 for t in tasks if t.get("node_id") == node_id and t.get("status") in ("claimed", "running")),
                         "done": sum(1 for t in tasks if t.get("node_id") == node_id and t.get("status") == "done"),
                         "failed": sum(1 for t in tasks if t.get("node_id") == node_id and t.get("status") == "failed"),
                     },
                 }
             )
         items.sort(key=lambda row: (row["role"] != "router", row["node_id"]))
+        queue = uisummary.queue_summary(tasks)
+        workspaces = [uisummary.workspace_summary(self.sync.workspaces[name], self.sync.runs)
+                      for name in self.sync.workspaces]
+        workspaces.sort(key=lambda row: (row.get("created") or 0), reverse=True)
         return {
             "upstream": {"control": self.control, "ok": True, "rtt_ms": rtt, "ts": time.time()},
             "router": {
@@ -437,9 +498,14 @@ class UiGateway:
                 "nodes": len(items),
                 "alive": sum(1 for row in items if row["alive"]),
                 "agents": sum(row["agent_count"] for row in items),
-                "tasks_running": sum(1 for t in tasks if t.get("status") == "running"),
-                "tasks_total": len(tasks),
+                "tasks_running": queue["counts"]["running"],
+                "tasks_total": queue["total"],
             },
+            # 首屏顶栏直接读这两个：quorum 是控制面的，queue 是任务队列的。
+            "quorum": router.get("quorum"),
+            "peers": router.get("peers") or [],
+            "queue": queue,
+            "workspaces": workspaces,
             "items": items,
         }
 
@@ -612,6 +678,146 @@ class UiGateway:
                             "output": result.get("output"), "error": result.get("error"), "elapsed_ms": result.get("elapsed_ms")})
         return "已向 %d 个节点下发 %s：\n%s" % (len(targets), cap_id, "\n".join(lines)), actions
 
+    # ------------------------------------------------ Router：LLM 会话支撑
+    # 这一层不跑模型：它只把「模型要的事实」压成很少的 token 交给 DSH 里的
+    # cluster-router 会话，并把结构化调用落回同一套 L2/L4 执行路径。
+
+    def _caps_by_id(self, state: dict) -> dict[str, list[str]]:
+        table: dict[str, list[str]] = {}
+        for cap in state.get("capabilities") or []:
+            table.setdefault(str(cap.get("cap_id")), []).append(str(cap.get("node_id")))
+        for holders in table.values():
+            holders.sort()
+        return table
+
+    def router_snapshot(self) -> dict:
+        """精简集群快照：几行文本，给系统提示用；只带模型决策需要的数字。"""
+        state = self.control_state(fresh=True)
+        router = state.get("router") or {}
+        nodes = state.get("nodes") or []
+        tasks = state.get("tasks") or []
+        caps = self._caps_by_id(state)
+        node_rows = []
+        for node in nodes:
+            metrics = node.get("metrics") or {}
+            node_rows.append({
+                "node_id": node.get("node_id"),
+                "os": node.get("os"),
+                "alive": bool(node.get("alive")),
+                "cpu_pct": metrics.get("cpu_percent"),
+                "mem_pct": metrics.get("mem_percent"),
+                "workers": f"{metrics.get('workers')}/{metrics.get('max_workers')}",
+            })
+        counts = {
+            "tasks": len(tasks),
+            "running": sum(1 for t in tasks if t.get("status") == "running"),
+            "failed": sum(1 for t in tasks if t.get("status") == "failed"),
+            "caps": len(caps),
+            "nodes": len(node_rows),
+            "nodes_alive": sum(1 for n in node_rows if n["alive"]),
+        }
+        workspaces = []
+        for name, workspace in list(self.sync.workspaces.items())[:6]:
+            last = None
+            for run in self.sync.runs.values():
+                if run.get("workspace") == name and (last is None or run.get("started", 0) > last.get("started", 0)):
+                    last = run
+            workspaces.append({"name": name, "policy": workspace.get("policy"),
+                               "last_run": (last or {}).get("status"), "last_run_id": (last or {}).get("id")})
+        lines = [
+            f"路由副本 {router.get('node_id')}（quorum {router.get('quorum')}，peers {len(router.get('peers') or [])}）",
+            "节点：" + "；".join(
+                f"{n['node_id']}={n['os']}{'/在线' if n['alive'] else '/离线'} cpu {n['cpu_pct']}% mem {n['mem_pct']}% workers {n['workers']}"
+                for n in node_rows),
+            "能力：" + "；".join(f"{cap_id}@[{','.join(holders)}]" for cap_id, holders in sorted(caps.items())),
+            f"任务：共 {counts['tasks']}，运行中 {counts['running']}，失败 {counts['failed']}",
+            "工作区：" + ("；".join(f"{w['name']}(policy={w['policy']}, last={w['last_run']})" for w in workspaces) or "无"),
+        ]
+        return {"text": "\n".join(lines), "nodes": node_rows, "caps": caps, "counts": counts, "workspaces": workspaces}
+
+    def router_status(self, limit: int = 8) -> dict:
+        """cluster_status 工具的返回：任务尾巴 + 能力表 + 同步状态，保持小。"""
+        state = self.control_state(fresh=True)
+        tasks = (state.get("tasks") or [])[-max(1, min(limit, 20)):]
+        caps = self._caps_by_id(state)
+        runs = sorted(self.sync.runs.values(), key=lambda run: run.get("started", 0))[-3:]
+        return {
+            "tasks": [{"id": t.get("id"), "status": t.get("status"), "cap_id": t.get("cap_id"),
+                       "node_id": t.get("node_id"), "error": t.get("error")} for t in tasks],
+            "caps": [{"cap_id": cap_id, "nodes": holders} for cap_id, holders in sorted(caps.items())],
+            "workspaces": [{"name": name, "policy": workspace.get("policy")}
+                           for name, workspace in self.sync.workspaces.items()],
+            "sync_runs": [{"id": run.get("id"), "workspace": run.get("workspace"), "status": run.get("status"),
+                           "policy": run.get("policy"), "error": run.get("error")} for run in runs],
+            "counts": {"nodes": len(state.get("nodes") or []), "caps": len(caps), "tasks": len(state.get("tasks") or [])},
+        }
+
+    def router_dispatch(self, body: dict) -> dict:
+        """结构化下发：能力/节点必须真实存在，然后走与快路径完全相同的执行路径。"""
+        cap_id = str(body.get("cap_id") or "").strip()
+        if not cap_id:
+            raise UiError(400, "缺 cap_id")
+        payload = body.get("payload")
+        if payload is None:
+            payload = {}
+        if not isinstance(payload, dict):
+            raise UiError(400, "payload 必须是 JSON 对象")
+        node = str(body.get("node") or "").strip()
+        fanout = bool(body.get("fanout"))
+        state = self.control_state(fresh=True)
+        caps = self._caps_by_id(state)
+        if cap_id not in caps:
+            raise UiError(400, f"没有这个能力: {cap_id}；可用: {', '.join(sorted(caps))}")
+        nodes = {str(n.get("node_id")) for n in state.get("nodes") or []}
+        tokens = [json.dumps(payload, ensure_ascii=False)]
+        if node:
+            if node not in nodes:
+                raise UiError(400, f"没有这个节点: {node}；现有: {', '.join(sorted(nodes))}")
+            if node not in caps[cap_id]:
+                raise UiError(400, f"{node} 上没有 {cap_id}；该能力在: {', '.join(caps[cap_id])}")
+            text, actions = self._invoke_one(node, cap_id, tokens)
+        elif fanout:
+            text, actions = self._fanout(cap_id, tokens, state)
+        else:
+            text, actions = self._run_routed(cap_id, tokens)
+        return {"ok": True, "cap_id": cap_id, "node": node or None, "text": text, "actions": actions}
+
+    def router_sync(self, body: dict) -> dict:
+        """工作区同步（写）。覆盖是危险动作，调用方必须显式带 confirm=true。"""
+        workspace = str(body.get("workspace") or "").strip()
+        policy = body.get("policy")
+        if body.get("confirm") is not True:
+            raise UiError(400, "拒绝执行：工作区同步会在节点间互相覆盖文件；需要先向用户确认，再带 confirm=true 调用")
+        if not workspace:
+            raise UiError(400, "缺 workspace")
+        if workspace not in self.sync.workspaces:
+            raise UiError(400, f"没有这个工作区: {workspace}；现有: {', '.join(self.sync.workspaces) or '无'}")
+        run = self.sync.start_sync(workspace, policy=policy if isinstance(policy, str) else None)
+        return {"ok": True, "run": run, "workspace": self.sync.workspace_view(workspace),
+                "text": f"已触发工作区 {workspace} 的同步：{run['id']}（policy={run.get('policy')}）"}
+
+    def router_log(self, body: dict) -> dict:
+        """把 LLM 会话的一次往返写进面板 transcript（面板只轮询这一个文件）。"""
+        items = body.get("items")
+        if not isinstance(items, list) or not items:
+            raise UiError(400, "items 必须是非空数组")
+        keep = {"role", "text", "ts", "actions", "elapsed_ms", "source", "model", "usage", "trace"}
+        clean = []
+        for row in items[:8]:
+            if not isinstance(row, dict):
+                continue
+            entry = {k: v for k, v in row.items() if k in keep}
+            if not entry.get("role") or not str(entry.get("text") or "").strip():
+                continue
+            entry.setdefault("ts", time.time())
+            clean.append(entry)
+        if not clean:
+            raise UiError(400, "items 里没有可写入的回合")
+        with self._state_lock:
+            self.transcript.extend(clean)
+            self._save_transcript()
+        return {"items": clean}
+
     # ------------------------------------------------------------ HTTP
     def _auth(self, raw: str) -> bool:
         return secrets.compare_digest((raw or "").strip(), self.ui_token)
@@ -622,6 +828,14 @@ class UiGateway:
         query = {k: v[0] for k, v in parse_qs(parsed.query).items()}
         if method == "GET" and route == "/api/health":
             return 200, {"ok": True, "gateway": "cluster-ui", "control": self.control, "ts": time.time(),
+                         # 设置页要把"这个面板连的是哪套控制面/证书"如实显示出来，
+                         # 所以把网关自己的启动参数一并回给页面（都是回环可见的本地事实，不含密钥）。
+                         "tls": {"dir": str(self._tls_dir) if self._tls_dir else None,
+                                 "cert_name": self._cert_name,
+                                 "enabled": bool(self.tls is not None)},
+                         "token_file": str(self.state_dir / "token"),
+                         "state_dir": str(self.state_dir),
+                         "host": self.host, "port": self.port,
                          "workspace_count": len(self.sync.workspaces), "run_count": len(self.sync.runs)}
         raw_token = query.get("token") or ""
         if not raw_token and isinstance(body, dict):
@@ -656,15 +870,27 @@ class UiGateway:
             return self.agents_view()
         if route == "/api/tasks":
             limit = int(query.get("limit") or 20)
-            tasks = (self.control_state().get("tasks") or [])[-limit:]
-            return {"items": tasks, "count": len(tasks)}
+            tasks = self.control_state().get("tasks") or []
+            return {"items": tasks[-limit:], "count": len(tasks[-limit:]), "queue": uisummary.queue_summary(tasks)}
         if route == "/api/router/transcript":
             limit = int(query.get("limit") or 50)
             return {"items": self.transcript[-limit:]}
         if route == "/api/router/message" and method == "POST":
             return self.router_send(str(body.get("text") or ""))
+        if route == "/api/router/snapshot":
+            return self.router_snapshot()
+        if route == "/api/router/status":
+            return self.router_status(int(query.get("limit") or 8))
+        if route == "/api/router/dispatch" and method == "POST":
+            return self.router_dispatch(body)
+        if route == "/api/router/sync" and method == "POST":
+            return self.router_sync(body)
+        if route == "/api/router/log" and method == "POST":
+            return self.router_log(body)
         if route == "/api/workspaces" and method == "GET":
             return {"items": [self.sync.workspace_view(name) for name in self.sync.workspaces],
+                    "summaries": [uisummary.workspace_summary(self.sync.workspaces[name], self.sync.runs)
+                                  for name in self.sync.workspaces],
                     "nodes": [{"node_id": n.get("node_id"), "os": n.get("os")} for n in self.live_nodes()]}
         if route == "/api/workspaces" and method == "POST":
             record = self.sync.create_workspace(str(body.get("name") or ""),
