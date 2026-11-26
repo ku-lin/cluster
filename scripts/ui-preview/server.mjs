@@ -78,6 +78,19 @@ function resolveCommit(rev) {
 /** 把 BASELINE_REV 里那一版 client.js 落到 .cache，供 baseline 直接取用。 */
 function materializeBaseline() {
   const commit = resolveCommit(BASELINE_REV)
+  const sourceRoot = process.env.PREVIEW_BASELINE_WORKTREE
+  if (sourceRoot) {
+    const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: sourceRoot, encoding: 'utf8' }).trim()
+    const dirty = execFileSync('git', ['status', '--porcelain'], { cwd: sourceRoot, encoding: 'utf8' }).trim()
+    if (head !== commit.fullSha || dirty) throw new Error('基线 worktree 必须干净且 HEAD 等于指定提交')
+    const path = join(sourceRoot, 'dsh-plugin', 'lib', 'client.js')
+    const bytes = readFileSync(path)
+    return {
+      path, rev: commit.rev, fullSha: head, subject: commit.subject,
+      source: 'git-worktree', sourceRoot,
+      sha: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length,
+    }
+  }
   const cache = join(repo, '.cache', 'ui-harness', `baseline-${commit.fullSha.slice(0, 7)}`)
   mkdirSync(cache, { recursive: true })
   const out = join(cache, 'client.js')
@@ -99,6 +112,7 @@ function materializeBaseline() {
     rev: commit.rev,
     fullSha: commit.fullSha,
     subject: commit.subject,
+    source: 'git-show',
     sha: createHash('sha256').update(text).digest('hex'),
     bytes: Buffer.byteLength(text),
   }
@@ -144,6 +158,8 @@ function manifest() {
       rev: baseline.rev,
       fullSha: baseline.fullSha,
       subject: baseline.subject,
+      source: baseline.source,
+      sourceRoot: baseline.sourceRoot || null,
       clientSha256: baseline.sha,
       clientBytes: baseline.bytes,
     },

@@ -2,45 +2,45 @@
   "schema": "ui-preview/compare/1",
   "evidenceDir": "docs/evidence/ui-1.2.0",
   "baselineRev": "751ea01",
-  "baselineClientSha256": "129bbf3570f04662564601cf11a677e5e96a2e3285c0b34f6491cd8f4f67c051",
+  "baselineClientSha256": "69122bce86eb37d9d98cdf4232ff23e389e5ef79b178b191f3c30f63a693f6b3",
   "afterClientSha256": "6050621f814f262370e68862a8c39479122ff7e6b84e605add0e1952dca6266d",
   "tokensSha256": "647d2b66bbbbf0eddbfd3046eacd1e394cbb5ffc7fb42892e1fa3f860e89ab3e",
   "fixturesSha256": "0e2fc2230b43bea4f6dce86f4ddcdbf5f1dbadc5c90638a69d52584f05efb93b",
   "frozenClockMs": 1795000000000,
   "sources": {
-    "beforeManifest": "ba1e65cc78dffaf822a6754520c569d1c59be3b4f0ec9faca5278d8e4b4a40fa",
-    "afterManifest": "af7f2cc9f46acc139ecad6d98b21361a7a0e61f26c11d72095a4b032f0082cac"
+    "beforeManifest": "796a0da96980a778d2a3009373ce6bf84789a1d0738d140c78f78703ba2ad1b8",
+    "afterManifest": "910debf95a95fb0652e85200dfa9219dce1cb85d8e0a2acca1d6f633ee18a7a4"
   },
   "images": [
     {
       "id": "overview-light",
       "file": "docs/evidence/ui-1.2.0/compare/overview-light.png",
-      "pngSha256": "7586793a9ea4263c7d334a64d06c1d5dee3eabb3346081e5580406aec35f74d3"
+      "pngSha256": "3de2920fa02f03156ee3009002c7caa29861ede8242af778f75c14cd8002374b"
     },
     {
       "id": "overview-dark",
       "file": "docs/evidence/ui-1.2.0/compare/overview-dark.png",
-      "pngSha256": "15beebb6f12bb8f1e92a47d574b3554b3fb5f431083924f3afbd5bb64bf2a0b8"
+      "pngSha256": "915d0f7c912dd4b90ead7c89af0b080d490884e44a3ecc68fa2a2939eeeb6bc6"
     },
     {
       "id": "overview-expanded-light",
       "file": "docs/evidence/ui-1.2.0/compare/overview-expanded-light.png",
-      "pngSha256": "918ad804e788dd8d790512a5cdf13446efeccef5cc5c2634da4e49efbeb8aec4"
+      "pngSha256": "a23267bb1e383e9895185ebd31f50b9a264b7d94853b23eedf31360187762443"
     },
     {
       "id": "overview-router-open-light",
       "file": "docs/evidence/ui-1.2.0/compare/overview-router-open-light.png",
-      "pngSha256": "3c9aa187e65d424cc33b88d9ca7c364279e94873705c47305938f3151d4c24ec"
+      "pngSha256": "81aaf83e63ec2dc86b558965026f34301255ccdb0c7966da3a472524a8489257"
     },
     {
       "id": "sync-tab-light",
       "file": "docs/evidence/ui-1.2.0/compare/sync-tab-light.png",
-      "pngSha256": "3cd5e711d5d1afd098661094ae82234f84b363b809cd371275b8d0d48fa8ca26"
+      "pngSha256": "b8ff44e50e92c4141b5ebab8acf09d316280e80f6b1ab965c15b3481b07852dd"
     },
     {
       "id": "settings-light",
       "file": "docs/evidence/ui-1.2.0/compare/settings-light.png",
-      "pngSha256": "19231e72068a7855abad48b33a7f585182ffb9a471df7f9a7a2c867e940092a5"
+      "pngSha256": "4ddb23c705275df1ce8573f2c31ed859883ce7cecb69ac6205e0b17875e7d55e"
     }
   ]
 }
