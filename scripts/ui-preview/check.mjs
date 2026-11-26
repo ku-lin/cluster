@@ -239,7 +239,10 @@ versionChecks.push(
         };
       })())`),
     )
-    return { name: '统计格：标签与数值上下两行、数值 ≥28px', ok: m.stacked && m.valueSize >= 28 && m.labelSize <= 13, detail: JSON.stringify(m) }
+    // 1.2.0 把峰值从 30px 收到 26px：健康带已经是本页视觉重心，
+    // 指标条若维持 30px 会与之争夺注意力。这里断言的是"分区成立"，
+    // 即标签明显小、数值明显大、且两者上下分行，而不是钉死某个具体像素。
+    return { name: '统计格：标签与数值上下两行、数值 ≥24px 且是标签 2 倍以上', ok: m.stacked && m.valueSize >= 24 && m.valueSize >= m.labelSize * 2 && m.labelSize <= 13, detail: JSON.stringify(m) }
   })(),
 )
 
@@ -247,16 +250,100 @@ versionChecks.push(
   await (async () => {
     const m = JSON.parse(
       await ev(`JSON.stringify((() => {
-        const body = document.querySelector('.dcu-body');
-        const card = document.querySelector('.dcu-card');
+        const band = document.querySelector('.dcu-health');
+        const h1 = band ? band.querySelector('h1') : null;
+        const rows = band ? [...band.querySelectorAll('.dcu-health-node')] : [];
+        const cards = [...document.querySelectorAll('.dcu-host-card')];
+        const pillState = (el) => {
+          const p = el.querySelector('.dcu-status-pill');
+          return p ? p.textContent.trim() : null;
+        };
+        const rowState = (el) => {
+          const s = el.querySelector('.dcu-health-node-state');
+          return s ? s.textContent.trim() : null;
+        };
+        // 同一台节点在健康带与卡片里必须说同一句话：这是本版最核心的一条。
+        const pairs = cards.map((c) => {
+          const node = c.querySelector('.dcu-node').textContent.trim();
+          const row = rows.find((r) => r.querySelector('strong').textContent.trim() === node);
+          return { node, card: pillState(c), band: row ? rowState(row) : null };
+        });
         return {
-          bodyPad: parseFloat(getComputedStyle(body).paddingLeft),
-          cardPad: parseFloat(getComputedStyle(card).paddingLeft),
-          bodyMax: getComputedStyle(body).maxWidth,
+          hasBand: !!band,
+          headline: h1 ? h1.textContent.trim() : null,
+          bandRows: rows.length,
+          cards: cards.length,
+          pairs,
+          allAgree: pairs.length > 0 && pairs.every((p) => p.card && p.card === p.band),
         };
       })())`),
     )
-    return { name: '内容留白：容器 ≥30px、卡内 ≥16px、有宽度上限', ok: m.bodyPad >= 30 && m.cardPad >= 16 && m.bodyMax !== 'none', detail: JSON.stringify(m) }
+    // 基线没有健康带，也根本没有 .dcu-host-card —— 这条断言在 baseline 上必然为假，
+    // 因此它证明的是"本版新增的状态表达确实存在且自洽"，而不是随便一个数值。
+    return {
+      name: '状态带存在，且与节点卡对同一台机给出同一句话',
+      ok: m.hasBand && !!m.headline && m.bandRows > 0 && m.cards > 0 && m.allAgree,
+      detail: JSON.stringify(m),
+    }
+  })(),
+)
+
+versionChecks.push(
+  await (async () => {
+    const m = JSON.parse(
+      await ev(`JSON.stringify((() => {
+        const wb = document.querySelector('.dcu-workbench');
+        if (!wb) return { hasWorkbench: false };
+        const fleet = wb.querySelector('.dcu-fleet');
+        const ops = wb.querySelector('.dcu-operations');
+        if (!fleet || !ops) return { hasWorkbench: true, bothColumns: false };
+        const f = fleet.getBoundingClientRect();
+        const o = ops.getBoundingClientRect();
+        return {
+          hasWorkbench: true,
+          bothColumns: true,
+          sameRow: Math.abs(Math.round(f.top) - Math.round(o.top)) <= 2,
+          fleetWider: Math.round(f.width) > Math.round(o.width),
+          sideBySide: Math.round(o.left) >= Math.round(f.right) - 2,
+        };
+      })())`),
+    )
+    // 基线是"一叠等宽卡自上而下"，没有左侧主列 + 右侧窄栏这种工作台结构。
+    return {
+      name: '工作台为「主列 + 窄栏」两栏布局（同排、主列更宽）',
+      ok: m.hasWorkbench && m.bothColumns && m.sameRow && m.fleetWider && m.sideBySide,
+      detail: JSON.stringify(m),
+    }
+  })(),
+)
+
+versionChecks.push(
+  await (async () => {
+    const m = JSON.parse(
+      await ev(`JSON.stringify((() => {
+        const router = document.querySelector('.dcu-router');
+        const body = document.querySelector('.dcu-body');
+        if (!router || !body) return { ok: false, why: 'missing router/body' };
+        const r = router.getBoundingClientRect();
+        const b = body.getBoundingClientRect();
+        return {
+          routerBottom: Math.round(r.bottom),
+          viewportH: window.innerHeight,
+          bodyBottom: Math.round(b.bottom),
+          routerTop: Math.round(r.top),
+          // Router 是 flex 最后一项：body 的底边不应越过 Router 的顶边（不重叠）。
+          noOverlap: Math.round(b.bottom) <= Math.round(r.top) + 1,
+          // Router 贴住视口底部，是"常驻底栏"而不是浮在中间的卡片。
+          flushBottom: Math.abs(Math.round(r.bottom) - window.innerHeight) <= 2,
+        };
+      })())`),
+    )
+    // 基线里 Router 是内容流里的一张卡片（浮在 body 内部），既不贴视口底也不构成底栏。
+    return {
+      name: 'Router 为贴底常驻栏且不覆盖内容区',
+      ok: m.noOverlap === true && m.flushBottom === true,
+      detail: JSON.stringify(m),
+    }
   })(),
 )
 

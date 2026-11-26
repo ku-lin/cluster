@@ -121,433 +121,283 @@ function mergeHistory(serverRows, localRows) {
 /* ------------------------------------------------------------------ 样式 */
 const STYLE_ID = 'dsh-cluster-ui-style'
 const CSS = `
-/* ------------------------------------------------------------------ 局部令牌
-   面板自己的一套 token，而不是直接用主题的 bg-layer-1/2/3。
-
-   原因很具体：浅色主题把 bg-base 与 bg-layer-1/2/3 全映射到同一个 #fff，卡片和
-   页面同色，只能靠 0.5px 细线分家——那不叫克制，叫平。这里显式定义「页面底色 /
-   卡面 / 描边 / 阴影」四件套，浅色下用 bluish-50 托住页面、白卡浮在上面，暗色下
-   沿用主题的 #151517 / #232324 这对已成立的层次。
-
-   阴影而不是更粗的描边：这个面板一屏里最多十几张卡，靠加深描边会变成表格线。
-   var(--x, fallback) 兜住主题没给静态色板的情况，取不到就退回 bg-base。 */
-.dcu-root,
-.dcu-settings {
-  --dcu-page: var(--dsw-static-neutral-bluish-50, var(--dsw-alias-bg-base));
-  --dcu-surface: var(--dsw-alias-bg-layer-1);
-  --dcu-line: var(--dsw-alias-border-l3);
-  --dcu-line-soft: var(--dsw-alias-border-l2);
-  --dcu-cpu: #3d7bfd;
-  --dcu-mem: #d98a2b;
-  --dcu-r-lg: 18px;
-  --dcu-r-md: 12px;
-  --dcu-r-sm: 9px;
-  --dcu-elev: 0 1px 1px rgba(16, 24, 40, .03), 0 10px 28px -18px rgba(16, 24, 40, .22);
+/* Hallmark · macrostructure: operational workspace · tone: technical · anchor hue: blue
+ * References: Tabler (card hierarchy + spacing) and Beszel (fleet status visibility).
+ * Design decisions only; no source code copied. */
+.dcu-root,.dcu-settings {
+  --dcu-page:#f4f6fa; --dcu-surface:#fff; --dcu-ink:#182433; --dcu-muted:#66788a;
+  --dcu-line:#d8e1eb; --dcu-line-soft:#e8edf3; --dcu-accent:#206bc4;
+  --dcu-cpu:#2876d2; --dcu-mem:#8b6ccf;
+  --dcu-good:#178a6b; --dcu-good-bg:#e6f5ef; --dcu-warn:#9a5c07; --dcu-warn-bg:#fdf0dc;
+  --dcu-bad:#d63939; --dcu-bad-bg:#fdecec;
+  --dcu-command:#12253a; --dcu-command-ink:#eaf2ff; --dcu-command-muted:#9db2c9;
+  --dcu-health-bg:#eaf0f8; --dcu-health-bg-2:#dfe8f4;
+  --dcu-r-lg:12px; --dcu-r-md:8px; --dcu-r-sm:6px;
+  --dcu-elev:0 1px 2px #18243308;
+  --dcu-display:'Segoe UI Variable Display','Segoe UI',system-ui,sans-serif;
+  --dcu-body-font:'Segoe UI','Microsoft YaHei',system-ui,sans-serif;
+  --dcu-mono:ui-monospace,Consolas,'Courier New',monospace;
+  font-family:var(--dcu-body-font); color:var(--dcu-ink);
 }
-/* 设置页不是 .dcu-root 的后代（它挂在 DSH 设置页的 slot 里），所以上面那组 token
-   必须同样定义在 .dcu-settings 上——否则设置页里的卡片拿不到 --dcu-line，描边整体
-   消失，看上去就像样式没生效。
-
-   而且**光定义不消费等于没定义**：这里必须真的把 --dcu-page 铺到 .dcu-settings 的
-   background 上，浅色下才是"浅灰页面托底 + 白卡浮起"。只写变量不写 background 的话，
-   设置页背景仍是透明的、透出 host 的 #fff，卡片和页面又变回同色。 */
-.dcu-settings {
-  background: var(--dcu-page);
-  color: var(--dsw-alias-label-primary);
-  /* 负边距 + 内边距：把设置页区域铺满 slot 给出的宽度，让底色一直延伸到边缘。 */
-  padding: 4px 4px 20px;
-  border-radius: var(--dcu-r-md);
+body[data-ds-dark-theme] .dcu-root,body[data-ds-dark-theme] .dcu-settings {
+  --dcu-page:#0f1822; --dcu-surface:#182433; --dcu-ink:#e7edf5; --dcu-muted:#a0afc0;
+  --dcu-line:#324458; --dcu-line-soft:#28394c; --dcu-accent:#6aabfa;
+  --dcu-cpu:#65a6f2; --dcu-mem:#b09ae7;
+  --dcu-good:#5cd0aa; --dcu-good-bg:#173c36; --dcu-warn:#f5be6c; --dcu-warn-bg:#3f3320;
+  --dcu-bad:#ff8d8d; --dcu-bad-bg:#452a33;
+  --dcu-command:#152436; --dcu-command-ink:#eaf2ff; --dcu-command-muted:#93a8c0;
+  --dcu-health-bg:#1c2e42; --dcu-health-bg-2:#22374e; --dcu-elev:none;
 }
-.dcu-root {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-  background: var(--dcu-page);
-  color: var(--dsw-alias-label-primary);
+.dcu-settings { background:var(--dcu-page); padding:20px; border-radius:var(--dcu-r-lg); }
+.dcu-root { display:flex; flex-direction:column; height:100%; min-height:0; background:var(--dcu-page); }
+
+/* 顶栏与标签：Tabler 式「表面 + 细分割线」，让内容区成为唯一的视觉舞台。 */
+.dcu-head { order:1; flex:none; display:flex; align-items:center; gap:12px; padding:16px 28px; background:var(--dcu-surface); border-bottom:1px solid var(--dcu-line-soft); }
+.dcu-title { display:flex; align-items:center; gap:10px; font:700 22px/1.2 var(--dcu-display); letter-spacing:-.6px; flex:none; }
+.dcu-brandmark { display:grid; grid-template-columns:repeat(2,6px); gap:3px; padding:8px; border-radius:8px; background:var(--dcu-accent); }
+.dcu-brandmark i { width:6px; height:6px; border-radius:1.5px; background:#fff; }
+.dcu-sub { font-size:12px; color:var(--dcu-muted); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dcu-head .dcu-btn { flex:none; }
+.dcu-spacer { flex:1 1 auto; }
+.dcu-tabs { order:2; flex:none; display:flex; gap:22px; padding:0 28px; background:var(--dcu-surface); border-bottom:1px solid var(--dcu-line-soft); }
+.dcu-tab { border:0; background:none; cursor:pointer; padding:12px 0; font-size:13px; font-weight:500; color:var(--dcu-muted); border-bottom:2px solid transparent; margin-bottom:-1px; }
+.dcu-tab:hover { color:var(--dcu-ink); }
+.dcu-tab[data-active=true] { color:var(--dcu-accent); border-bottom-color:var(--dcu-accent); font-weight:600; }
+
+/* 内容区：唯一可滚动区域。底部留出 composer 高度由 flex 自动处理，不靠魔法 padding。 */
+.dcu-body { order:3; flex:1 1 auto; min-height:0; overflow:auto; padding:24px 28px 32px; width:100%; max-width:1600px; margin:0 auto; box-sizing:border-box; }
+/* Router 做成常驻底部指令条：DOM 在 body 之后、flex 最后一项，因此**不会盖住内容**。
+   展开时最多占 46vh，日志区内部滚动——否则对话一长就把输入框和下面的页面一起挤出视口。 */
+.dcu-router { order:9; flex:none; display:flex; flex-direction:column; max-height:42vh; margin:0; border-top:1px solid var(--dcu-line); border-radius:0; background:var(--dcu-command); color:var(--dcu-command-ink); box-shadow:none; }
+.dcu-router-head { flex:none; flex-wrap:wrap; gap:9px; padding:9px 20px; border-bottom:0; }
+.dcu-router.collapsed .dcu-router-head { border-bottom:0; }
+.dcu-router-title { font-size:11px; letter-spacing:.1em; color:var(--dcu-command-ink); }
+.dcu-router-tag { color:var(--dcu-command-muted); font-size:12px; flex:1 1 120px; }
+.dcu-router-head .dcu-btn { background:transparent; color:var(--dcu-command-ink); border-color:#ffffff2e; }
+.dcu-router-head .dcu-btn:hover { background:#ffffff14; border-color:#ffffff5c; }
+.dcu-router-log { flex:1 1 auto; min-height:0; overflow:auto; padding:12px 20px; border-top:1px solid #ffffff1a; }
+.dcu-turn-user { color:#9ec5ff; }
+.dcu-turn-reply { color:var(--dcu-command-ink); }
+.dcu-turn-meta,.dcu-hint { color:var(--dcu-command-muted); }
+.dcu-router-input { flex:none; padding:10px 20px 12px; border-top:1px solid #ffffff1a; }
+.dcu-router-input textarea { background:#ffffff0f; border-color:#ffffff2e; color:var(--dcu-command-ink); }
+.dcu-router-input textarea::placeholder { color:var(--dcu-command-muted); }
+.dcu-router-send { background:var(--dcu-accent); border-color:transparent; color:#fff; }
+.dcu-action { border-color:#ffffff33; color:#c8dcf5; }
+
+/* 通用表面 */
+.dcu-chart,.dcu-card,.dcu-run { background:var(--dcu-surface); border:1px solid var(--dcu-line-soft); border-radius:var(--dcu-r-lg); box-shadow:var(--dcu-elev); min-width:0; }
+/* overview 里的每一块都是"整块内容"，不该被压缩。
+   否则底部 Router 展开、可用高度变小时，flex 会按 shrink 直接把节点卡挤扁
+   （实测卡片从 ~190px 压到 ~80px，卡片内部文字互相重叠），而不是让 body 滚动。
+   页面整体滚动交给 .dcu-body，块内不参与压缩。 */
+.dcu-overview { display:flex; flex-direction:column; gap:18px; }
+/* .dcu-body 是 flex 列容器：里面的整块内容一律不收缩，否则 Router 展开、可用高度
+   变小时会把概览压扁（实测节点卡从 ~190px 压到 ~78px，文字重叠），而不是让 body 滚动。 */
+.dcu-body > * { flex:none; }
+.dcu-overview > * { flex:none; }
+/* 卡片栅格的行高跟随内容，不随容器压缩。 */
+.dcu-cards { grid-auto-rows:min-content; }
+.dcu-cards > * { min-height:0; }
+
+/* 1 · 实时健康带：本页的重心。左侧一句话结论，右侧每台节点的真实状态。 */
+.dcu-health { display:grid; grid-template-columns:minmax(0,1fr) minmax(230px,.62fr); gap:26px; padding:22px 26px; border-radius:14px; background:var(--dcu-health-bg); border:1px solid var(--dcu-health-bg-2); position:relative; overflow:hidden; }
+.dcu-health::before { content:''; position:absolute; inset:0 auto 0 0; width:4px; background:var(--dcu-good); }
+.dcu-health[data-state=warn]::before { background:var(--dcu-warn); }
+.dcu-health[data-state=bad]::before { background:var(--dcu-bad); }
+.dcu-health[data-state=unknown]::before { background:var(--dcu-muted); }
+.dcu-health-eyebrow { display:flex; align-items:center; gap:7px; font-size:11px; font-weight:650; letter-spacing:.09em; text-transform:uppercase; color:var(--dcu-muted); }
+.dcu-health-signal { width:7px; height:7px; border-radius:50%; background:var(--dcu-good); }
+.dcu-health[data-state=warn] .dcu-health-signal { background:var(--dcu-warn); }
+.dcu-health[data-state=bad] .dcu-health-signal { background:var(--dcu-bad); }
+.dcu-health h1 { margin:9px 0 7px; font:650 27px/1.25 var(--dcu-display); letter-spacing:-.7px; overflow-wrap:anywhere; }
+.dcu-health p { margin:0; font-size:12.5px; line-height:1.7; color:var(--dcu-muted); }
+.dcu-health-tags { display:flex; flex-wrap:wrap; gap:6px; margin-top:14px; }
+.dcu-health-tags>span { font-size:11px; padding:3px 8px; border-radius:5px; background:var(--dcu-good-bg); color:var(--dcu-good); }
+.dcu-health-tags>span.attention { background:var(--dcu-warn-bg); color:var(--dcu-warn); }
+.dcu-health-nodes { display:flex; flex-direction:column; justify-content:center; gap:8px; min-width:0; }
+.dcu-health-node { display:grid; grid-template-columns:7px minmax(0,1fr) auto auto; align-items:center; gap:9px; padding:9px 12px; border-radius:9px; background:var(--dcu-surface); border:1px solid var(--dcu-line-soft); font-size:11.5px; }
+.dcu-health-node-mark { width:7px; height:7px; border-radius:50%; background:var(--dcu-good); }
+.dcu-health-node strong { font:600 12px var(--dcu-mono); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--dcu-ink); }
+.dcu-health-node-state { color:var(--dcu-good); font-weight:600; }
+.dcu-health-node-metric { font:11px var(--dcu-mono); color:var(--dcu-muted); }
+.dcu-health-node[data-state=warn] .dcu-health-node-mark { background:var(--dcu-warn); }
+.dcu-health-node[data-state=warn] .dcu-health-node-state { color:var(--dcu-warn); }
+.dcu-health-node[data-state=stale] .dcu-health-node-mark { background:var(--dcu-warn); }
+.dcu-health-node[data-state=stale] .dcu-health-node-state { color:var(--dcu-warn); }
+.dcu-health-node[data-state=bad] .dcu-health-node-mark { background:var(--dcu-bad); }
+.dcu-health-node[data-state=bad] .dcu-health-node-state { color:var(--dcu-bad); }
+
+/* 2 · 指标条：数字仍是主角，但降一档，不与健康带争重心。 */
+.dcu-strip { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:12px; border:0; background:none; box-shadow:none; border-radius:0; overflow:visible; }
+.dcu-stat { display:flex; flex-direction:column; gap:6px; padding:14px 16px; margin:0; background:var(--dcu-surface); border:1px solid var(--dcu-line-soft); border-radius:10px; box-shadow:var(--dcu-elev); min-width:0; }
+.dcu-stat-top { display:flex; align-items:center; gap:6px; min-width:0; }
+.dcu-stat-label { font-size:11px; font-weight:600; color:var(--dcu-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dcu-stat-value { display:flex; align-items:baseline; gap:5px; font:650 26px/1.1 var(--dcu-display); letter-spacing:-.5px; font-variant-numeric:tabular-nums; color:var(--dcu-ink); white-space:nowrap; overflow:hidden; }
+.dcu-stat-unit { font-size:12px; font-weight:500; color:var(--dcu-muted); letter-spacing:0; }
+.dcu-stat-note { font-size:11px; color:var(--dcu-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dcu-stat .dcu-dot { width:6px; height:6px; }
+
+/* 3 · 工作台：左「节点运行状况」是主列，右「任务 / 同步」是窄栏。 */
+.dcu-workbench { display:grid; grid-template-columns:minmax(0,1fr) 316px; gap:18px; align-items:start; }
+.dcu-fleet,.dcu-operations { display:flex; flex-direction:column; gap:14px; min-width:0; }
+.dcu-rule { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; padding:0 2px; }
+.dcu-rule::after { display:none; }
+.dcu-rule-title { font-size:15px; font-weight:650; letter-spacing:-.2px; }
+.dcu-rule-note { margin-left:auto; font-size:11px; color:var(--dcu-muted); white-space:nowrap; }
+.dcu-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr)); gap:14px; align-items:start; }
+.dcu-empty { padding:24px; text-align:center; font-size:12px; color:var(--dcu-muted); border:1px dashed var(--dcu-line); border-radius:10px; }
+
+/* 节点卡：顶部 3px 状态色条 + 状态胶囊，扫一眼就知道这台能不能干活。 */
+.dcu-host-card { position:relative; display:flex; flex-direction:column; gap:13px; min-height:188px; padding:16px 18px 14px; border-top:3px solid var(--dcu-good); }
+.dcu-host-card[data-state=warn],.dcu-host-card[data-state=stale] { border-top-color:var(--dcu-warn); }
+.dcu-host-card[data-state=bad] { border-top-color:var(--dcu-bad); }
+.dcu-host-status { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:11px; color:var(--dcu-muted); }
+.dcu-status-pill { display:inline-flex; align-items:center; gap:5px; padding:3px 8px; border-radius:5px; font-size:11px; font-weight:650; background:var(--dcu-good-bg); color:var(--dcu-good); white-space:nowrap; }
+.dcu-status-pill[data-state=warn],.dcu-status-pill[data-state=stale] { background:var(--dcu-warn-bg); color:var(--dcu-warn); }
+.dcu-status-pill[data-state=bad] { background:var(--dcu-bad-bg); color:var(--dcu-bad); }
+.dcu-host-symbol { display:none; }
+.dcu-card-head { display:flex; align-items:center; gap:7px; flex-wrap:wrap; min-width:0; }
+.dcu-card-head>.dcu-dot { display:none; }
+.dcu-node { font:650 17px/1.2 var(--dcu-display); letter-spacing:-.3px; color:var(--dcu-ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dcu-card-head>.dcu-cap { margin-left:auto; font-size:10.5px; }
+.dcu-chip { padding:1px 7px; border-radius:4px; font-size:10px; background:var(--dcu-page); border:1px solid var(--dcu-line-soft); color:var(--dcu-muted); white-space:nowrap; }
+.dcu-metrics { display:grid; grid-template-columns:1fr 1fr; gap:8px 18px; }
+.dcu-meter { display:flex; flex-direction:column; gap:5px; min-width:0; }
+.dcu-meter-head { display:flex; justify-content:space-between; align-items:baseline; gap:6px; font-size:11px; color:var(--dcu-muted); }
+.dcu-meter-head>span:last-child { font:600 13px var(--dcu-mono); color:var(--dcu-ink); }
+.dcu-meter-track { height:5px; border-radius:999px; background:var(--dcu-line-soft); overflow:hidden; }
+.dcu-meter-fill { height:100%; border-radius:999px; background:var(--dcu-cpu); transition:width .3s ease; }
+.dcu-meter-fill.warn { background:var(--dcu-warn); }
+.dcu-meter-fill.bad { background:var(--dcu-bad); }
+.dcu-kv { display:flex; flex-wrap:wrap; gap:5px 14px; font-size:11px; color:var(--dcu-muted); }
+.dcu-kv b { color:var(--dcu-ink); font-weight:650; font-variant-numeric:tabular-nums; }
+.dcu-host-trend { padding:7px 9px 3px; border-radius:7px; background:var(--dcu-page); }
+.dcu-trend-caption { display:flex; justify-content:space-between; gap:8px; font-size:10px; color:var(--dcu-muted); margin-bottom:5px; }
+.dcu-host-trend .dcu-spark { height:38px; }
+.dcu-spark { width:100%; display:block; }
+.dcu-spark-empty { height:38px; display:flex; align-items:center; font-size:11px; color:var(--dcu-muted); }
+.dcu-fold { border-top:1px solid var(--dcu-line-soft); padding-top:8px; }
+.dcu-fold>summary { display:flex; align-items:center; gap:6px; cursor:pointer; list-style:none; font-size:11px; color:var(--dcu-muted); padding:2px 0; }
+.dcu-fold>summary::-webkit-details-marker { display:none; }
+.dcu-fold>summary::before { content:'▸'; font-size:9px; transition:transform .12s ease; }
+.dcu-fold[open]>summary::before { transform:rotate(90deg); }
+.dcu-fold>summary:hover { color:var(--dcu-ink); }
+.dcu-agents { display:flex; flex-direction:column; gap:5px; padding-top:8px; }
+.dcu-agent { display:grid; grid-template-columns:10px minmax(0,1fr) auto auto; gap:9px; align-items:center; font-size:11.5px; }
+.dcu-agent-id { font:11px var(--dcu-mono); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dcu-muted { color:var(--dcu-muted); }
+.dcu-cap { font-size:11px; }
+.dcu-cap-lg { font-size:12px; }
+.dcu-name { font-size:13px; font-weight:650; }
+.dcu-conflict { font-size:11px; }
+
+/* 右栏卡片：任务队列 + 同步状态 */
+.dcu-chart,.dcu-run { padding:16px 18px; display:flex; flex-direction:column; gap:13px; }
+.dcu-chart-head { display:flex; align-items:center; gap:8px; }
+.dcu-chart-title,.dcu-section-title { font-size:13.5px; font-weight:650; letter-spacing:-.1px; }
+.dcu-section-title { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+.dcu-section-title>.dcu-cap-lg { font-size:10px; font-weight:400; }
+.dcu-chart-foot { font-size:10px; color:var(--dcu-muted); }
+.dcu-qbar { display:flex; height:8px; border-radius:999px; overflow:hidden; background:var(--dcu-line-soft); }
+.dcu-qseg { height:100%; }
+.dcu-qseg.waiting { background:var(--dcu-warn); opacity:.55; }
+.dcu-qseg.running { background:var(--dcu-accent); }
+.dcu-qseg.done { background:var(--dcu-good); opacity:.85; }
+.dcu-qseg.failed { background:var(--dcu-bad); }
+.dcu-qseg.cancelled,.dcu-qseg.unknown { background:var(--dcu-muted); opacity:.4; }
+.dcu-qkeys { display:grid; grid-template-columns:1fr 1fr; gap:8px 14px; font-size:11px; color:var(--dcu-muted); }
+.dcu-qkey { display:grid; grid-template-columns:7px minmax(0,1fr) auto; align-items:center; gap:6px; }
+.dcu-qkey b { font:650 15px var(--dcu-mono); color:var(--dcu-ink); }
+.dcu-qkey>.dcu-dot { width:7px; height:7px; border-radius:2px; }
+.dcu-operations .dcu-sync-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px 8px; align-items:center; padding:10px 0 10px 14px; border-bottom:1px solid var(--dcu-line-soft); position:relative; }
+.dcu-operations .dcu-sync-row::before { position:absolute; left:0; top:14px; }
+.dcu-operations .dcu-fold[open]>.dcu-sync-row::before { transform:rotate(90deg); }
+.dcu-operations .dcu-sync-name { font-size:12.5px; font-weight:650; grid-column:1; }
+.dcu-operations .dcu-sync-row>span:nth-child(2) { grid-column:2; grid-row:1; justify-self:end; }
+.dcu-operations .dcu-sync-time { grid-column:2; grid-row:2; justify-self:end; font-size:10.5px; color:var(--dcu-muted); }
+.dcu-operations .dcu-sync-note { grid-column:1; grid-row:2; font-size:10.5px; white-space:normal; }
+.dcu-badge { display:inline-block; padding:2px 7px; border-radius:4px; font-size:10px; font-weight:600; border:0; white-space:nowrap; }
+.dcu-badge.done { color:var(--dcu-good); background:var(--dcu-good-bg); }
+.dcu-badge.partial,.dcu-badge.conflict { color:var(--dcu-warn); background:var(--dcu-warn-bg); }
+.dcu-badge.failed { color:var(--dcu-bad); background:var(--dcu-bad-bg); }
+.dcu-badge.running { color:var(--dcu-accent); background:#e7f0fb; }
+/* 高负载数值标红，但条形保持固定色相：颜色只用来提示"这个数要看了"。 */
+.dcu-hot { color:var(--dcu-bad); font-weight:600; }
+
+/* 图表（同步页/设置页仍在用） */
+.dcu-charts { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(0,1fr); gap:18px; }
+.dcu-bars { display:flex; flex-direction:column; gap:12px; }
+.dcu-bar-node { display:grid; grid-template-columns:86px minmax(0,1fr) 120px; gap:12px; align-items:center; }
+.dcu-bar-name { font-size:12px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dcu-bar-pair { display:flex; flex-direction:column; gap:5px; min-width:0; }
+.dcu-bar { display:grid; grid-template-columns:30px minmax(0,1fr); gap:8px; align-items:center; }
+.dcu-bar-tag { font-size:10px; font-weight:600; color:var(--dcu-muted); }
+.dcu-bar-track { height:7px; border-radius:999px; background:var(--dcu-line-soft); overflow:hidden; }
+.dcu-bar-fill { display:block; height:100%; border-radius:999px; background:var(--dcu-cpu); transition:width .3s ease; }
+.dcu-bar-fill.mem { background:var(--dcu-mem); }
+.dcu-bar-fill.bad { background:var(--dcu-bad); }
+.dcu-bar-vals { font:11px var(--dcu-mono); color:var(--dcu-muted); text-align:right; white-space:nowrap; }
+.dcu-legend { display:flex; gap:12px; font-size:11px; color:var(--dcu-muted); align-items:center; }
+.dcu-legend-swatch { width:10px; height:3px; border-radius:2px; display:inline-block; margin-right:4px; vertical-align:middle; }
+
+/* 表单 / 按钮 / 设置页 */
+.dcu-btn { border:1px solid var(--dcu-line); background:var(--dcu-surface); color:var(--dcu-ink); border-radius:var(--dcu-r-sm); padding:6px 12px; font:500 12px var(--dcu-body-font); cursor:pointer; white-space:nowrap; transition:background .15s ease,border-color .15s ease; }
+.dcu-btn:hover { background:var(--dcu-page); border-color:var(--dcu-line); }
+.dcu-btn:focus-visible { outline:2px solid var(--dcu-accent); outline-offset:2px; }
+.dcu-btn:disabled { opacity:.45; cursor:default; }
+.dcu-btn.primary { background:var(--dcu-accent); border-color:transparent; color:#fff; font-weight:600; }
+.dcu-btn.warn { border-color:#d99a49; color:#94580f; }
+body[data-ds-dark-theme] .dcu-btn.warn { color:#f0c07a; }
+.dcu-input,.dcu-select { border:1px solid var(--dcu-line); border-radius:var(--dcu-r-sm); padding:7px 10px; font:12px var(--dcu-body-font); background:var(--dcu-surface); color:var(--dcu-ink); }
+.dcu-input:focus,.dcu-select:focus { outline:none; border-color:var(--dcu-accent); box-shadow:0 0 0 3px #206bc41f; }
+.dcu-form { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.dcu-error { border:1px solid var(--dcu-bad); color:var(--dcu-bad); border-radius:var(--dcu-r-md); padding:9px 12px; font-size:12px; }
+.dcu-overview>.dcu-error,.dcu-run>.dcu-error,.dcu-settings>.dcu-error { background:var(--dcu-surface); }
+.dcu-router .dcu-error { background:#d6393924; border-color:#ff8d8d; color:#ffc9c9; margin:0 20px 8px; }
+.dcu-table { width:100%; border-collapse:collapse; font-size:11.5px; }
+.dcu-table th { text-align:left; padding:7px 9px; font-size:10px; letter-spacing:.04em; text-transform:uppercase; color:var(--dcu-muted); border-bottom:1px solid var(--dcu-line); font-weight:600; }
+.dcu-table td { padding:7px 9px; border-bottom:1px solid var(--dcu-line-soft); vertical-align:top; }
+.dcu-table tr:last-child td { border-bottom:0; }
+.dcu-mono { font-family:var(--dcu-mono); }
+.dcu-roots { display:flex; flex-direction:column; gap:3px; font:10.5px var(--dcu-mono); color:var(--dcu-muted); }
+.dcu-settings { display:flex; flex-direction:column; gap:16px; }
+.dcu-summary { display:flex; flex-wrap:wrap; gap:6px; }
+
+@media (max-width:1240px) {
+  .dcu-workbench { grid-template-columns:minmax(0,1fr) 290px; }
+  .dcu-health { grid-template-columns:minmax(0,1fr) 220px; gap:20px; }
+  .dcu-stat-value { font-size:23px; }
+  .dcu-stat-note { white-space:normal; }
 }
-body[data-ds-dark-theme] .dcu-root,
-body[data-ds-dark-theme] .dcu-settings {
-  --dcu-page: var(--dsw-alias-bg-base);
-  --dcu-elev: 0 1px 2px rgba(0, 0, 0, .4), 0 14px 34px -20px rgba(0, 0, 0, .7);
+@media (max-width:1000px) {
+  .dcu-workbench { grid-template-columns:1fr; }
+  .dcu-operations { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); align-items:start; }
+  .dcu-cards { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .dcu-strip { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .dcu-bar-vals { text-align:left; }
 }
-
-/* 面板通用：所有"一张卡"的东西共用同一套描边/圆角/阴影，避免各处半径不一。 */
-.dcu-card,
-.dcu-chart,
-.dcu-run {
-  border: 1px solid var(--dcu-line-soft);
-  border-radius: var(--dcu-r-lg);
-  background: var(--dcu-surface);
-  box-shadow: var(--dcu-elev);
-  min-width: 0;
+@media (max-width:700px) {
+  .dcu-head { padding:14px 16px; }
+  .dcu-title { font-size:20px; }
+  .dcu-sub { display:none; }
+  .dcu-tabs { padding:0 16px; gap:18px; }
+  .dcu-body { padding:16px; }
+  .dcu-health { grid-template-columns:1fr; padding:18px 20px; gap:16px; }
+  .dcu-health h1 { font-size:23px; }
+  .dcu-strip { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .dcu-cards,.dcu-operations { grid-template-columns:1fr; }
+  .dcu-rule-note { margin-left:0; }
+  .dcu-bar-node { grid-template-columns:1fr; gap:6px; }
+  .dcu-bar-vals { text-align:left; }
+  .dcu-router-head { padding:9px 16px; }
+  .dcu-router-log,.dcu-router-input { padding-left:16px; padding-right:16px; }
+  .dcu-settings { padding:14px; }
 }
-
-/* ------------------------------------------------------------------ 标题栏 */
-/* 只有 .dcu-body 该被压缩（它自己 overflow:auto）。标题栏 / Router / 标签页都是
-   固有高度，必须 flex:none —— 否则内容一高，flex 会把它们一起挤扁：Router 的
-   深色块被压到比自己的 header 还矮，右下那颗按钮就戳到卡片外面去了。 */
-/* align-items: baseline 让标题与副标题同一基线；但窄屏下副标题会把刷新按钮挤成竖排
-   （「刷/新」两行，按钮从 34px 变成 54px），所以副标题允许收缩并省略，按钮不许换行。 */
-.dcu-head { display: flex; align-items: baseline; gap: 14px; padding: 26px 32px 16px; flex: none; }
-.dcu-title { font-size: 24px; font-weight: 650; letter-spacing: -.02em; line-height: 1.15; flex: none; }
-.dcu-sub { font-size: 13px; color: var(--dsw-alias-label-tertiary); letter-spacing: .01em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dcu-head .dcu-btn { white-space: nowrap; flex: none; }
-.dcu-spacer { flex: 1 1 auto; }
-
-.dcu-btn {
-  border: 1px solid var(--dcu-line);
-  background: var(--dcu-surface);
-  color: var(--dsw-alias-label-primary);
-  border-radius: var(--dcu-r-sm);
-  padding: 7px 14px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background .15s ease, border-color .15s ease, box-shadow .15s ease;
-}
-.dcu-btn:hover { background: var(--dsw-alias-interactive-bg-hover); border-color: var(--dsw-alias-border-l4); }
-.dcu-btn:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
-.dcu-btn:disabled { opacity: .45; cursor: default; }
-.dcu-btn.primary { background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); border-color: transparent; font-weight: 600; }
-.dcu-btn.warn { border-color: #d99a49; color: #94580f; }
-body[data-ds-dark-theme] .dcu-btn.warn { color: #f0c07a; }
-
-.dcu-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  border-radius: 999px;
-  padding: 2px 10px;
-  font-size: 11.5px;
-  border: 1px solid var(--dcu-line-soft);
-  background: var(--dcu-page);
-  color: var(--dsw-alias-label-secondary);
-  white-space: nowrap;
-}
-.dcu-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
-.dcu-dot.ok { background: var(--dsw-alias-state-success-primary); }
-.dcu-dot.warn { background: var(--dsw-alias-state-warn-primary); }
-.dcu-dot.bad { background: var(--dsw-alias-state-error-primary); }
-.dcu-dot.busy { background: var(--dsw-alias-brand-primary); }
-
-/* 标签页：下拉线只到 1px，选中项用主色 + 字重区分，不用填充块（填充块会和卡片抢重量）。 */
-.dcu-tabs { display: flex; gap: 4px; padding: 0 32px; border-bottom: 1px solid var(--dcu-line-soft); flex: none; }
-.dcu-tab {
-  border: 0;
-  background: transparent;
-  color: var(--dsw-alias-label-tertiary);
-  padding: 11px 15px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  transition: color .15s ease, border-color .15s ease;
-}
-.dcu-tab:hover { color: var(--dsw-alias-label-secondary); }
-.dcu-tab[data-active="true"] { color: var(--dsw-alias-label-primary); border-bottom-color: var(--dsw-alias-brand-primary); font-weight: 600; }
-
-/* 内容区：宽屏留白跟着走，但给一个上限——1440 以上再拉宽，行长会失控。 */
-.dcu-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
-  padding: 24px 32px 44px;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  max-width: 1480px;
-  width: 100%;
-  margin: 0 auto;
-  box-sizing: border-box;
-}
-.dcu-error { border: 1px solid var(--dsw-alias-state-error-primary); color: var(--dsw-alias-state-error-primary); border-radius: var(--dcu-r-md); padding: 10px 14px; font-size: 12.5px; }
-/* 错误块在浅色面板上要有一层底才不至于"悬空"；但在 Router 的深色板里必须**不要**
-   浅色底——否则深棕底上会拍出一整块白板，和"深色板刻意与普通会话拉开距离"的意图相反。 */
-.dcu-overview > .dcu-error,
-.dcu-run > .dcu-error,
-.dcu-settings > .dcu-error { background: var(--dcu-surface); }
-.dcu-router .dcu-error {
-  background: rgba(236, 19, 19, .14);
-  border-color: rgba(242, 90, 90, .7);
-  color: #ffb3b3;
-  margin: 0 14px 10px;
-}
-.dcu-summary { display: flex; flex-wrap: wrap; gap: 8px; }
-
-/* ------------------------------------------------------------------ 首屏：健康总览
-   五格等宽。数字给到 30px：这一屏的主角是「2/2、2/2、1、完成、42ms」这几个数，
-   不是卡片边框。
-
-   布局用**每档断点写死列数的 grid**，不是 flex-wrap：
-   - flex-wrap 换行后末行不足一行的格会被 flex-grow 拉满（719px 下末格 682px，
-     是其它格的两倍），「五格等宽」就不成立了；
-   - 行与行之间没有横线（只有竖线），换行后的行首格还挂着一条 border-left，
-     悬在下一行上面。
-
-   grid 早先用过一版有问题的写法：gap:1px + 容器底色当分隔线，排不满一行时
-   空轨道会露出那片底色，看着像脏块。这次改成 **gap:0、分隔线全部由单元格的
-   border 提供**，空轨道就只是容器自身的背景色（与卡面同色），不会露边。
-
-   边缘那条重复线用 margin: 0 -1px -1px 0 + 容器 overflow:hidden 裁掉：
-   最后一列的 border-right、最后一行的 border-bottom 会被推到 padding box 之外。
-   这样每个断点都不需要写 :nth-child 去特判"末格不要线"。 */
-.dcu-strip {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  border: 1px solid var(--dcu-line-soft);
-  border-radius: var(--dcu-r-lg);
-  box-shadow: var(--dcu-elev);
-  background: var(--dcu-surface);
-  overflow: hidden;
-}
-.dcu-stat {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  padding: 17px 22px 19px;
-  background: var(--dcu-surface);
-  min-width: 0;
-  box-sizing: border-box;
-  /* 每格画出右/下两条内线；最外圈的由容器 border 负责，重复的那条被裁掉。 */
-  border-right: 1px solid var(--dcu-line-soft);
-  border-bottom: 1px solid var(--dcu-line-soft);
-  margin: 0 -1px -1px 0;
-}
-.dcu-stat-top { display: flex; align-items: center; gap: 7px; min-width: 0; }
-.dcu-stat-label {
-  font-size: 11.5px;
-  font-weight: 650;
-  letter-spacing: .05em;
-  color: var(--dsw-alias-label-tertiary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.dcu-stat-value {
-  font-size: 30px;
-  font-weight: 620;
-  letter-spacing: -.03em;
-  line-height: 1.02;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-/* 单位/量词跟着数字走，但小一号、次要色：「1 运行」里的「运行」不该和「1」同样重。 */
-.dcu-stat-unit { font-size: 14px; font-weight: 500; letter-spacing: 0; color: var(--dsw-alias-label-tertiary); }
-.dcu-stat-note { font-size: 12px; color: var(--dsw-alias-label-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* 列数按断点显式给，不靠 flex 摊平：这样每一行的格宽严格相等，
-   末行不足一行时剩下的空轨道只是容器底色（与卡面同色），不会露出灰块。 */
-@media (max-width: 1180px) {
-  .dcu-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-}
-@media (max-width: 720px) {
-  .dcu-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .dcu-head { padding: 20px 18px 14px; }
-  .dcu-tabs { padding: 0 18px; }
-  .dcu-body { padding: 18px 18px 32px; gap: 16px; }
-}
-
-/* ------------------------------------------------------------------ 首屏：图表 */
-.dcu-charts { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 20px; }
-@media (max-width: 1080px) { .dcu-charts { grid-template-columns: 1fr; } }
-.dcu-chart { padding: 18px 22px 20px; display: flex; flex-direction: column; gap: 16px; }
-.dcu-chart-head { display: flex; align-items: center; gap: 10px; }
-.dcu-chart-title { font-size: 15px; font-weight: 620; letter-spacing: -.01em; }
-.dcu-chart-foot { font-size: 11.5px; color: var(--dsw-alias-label-tertiary); }
-.dcu-legend { display: flex; gap: 14px; font-size: 12px; color: var(--dsw-alias-label-secondary); align-items: center; }
-.dcu-legend-swatch { width: 12px; height: 3px; border-radius: 2px; display: inline-block; margin-right: 5px; vertical-align: middle; }
-
-.dcu-spark { width: 100%; height: 40px; display: block; }
-.dcu-spark-empty { font-size: 12px; color: var(--dsw-alias-label-tertiary); height: 40px; display: flex; align-items: center; }
-
-/* 每节点 CPU/内存条：轨道从 8px 抬到 10px，数值行给 13px——首屏扫的是"谁吃满了"，
-   细条在 1440 宽的屏上要凑近才看得清刻度差。 */
-.dcu-bars { display: flex; flex-direction: column; gap: 16px; }
-.dcu-bar-node { display: grid; grid-template-columns: 108px minmax(0, 1fr) 158px; gap: 14px; align-items: center; }
-.dcu-bar-name { font-size: 13.5px; font-weight: 560; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dcu-bar-pair { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.dcu-bar { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; align-items: center; }
-.dcu-bar-tag { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--dsw-alias-label-tertiary); }
-/* 轨道用半透明灰而不是主题的 bg-layer-3：主题皮肤（dream skin）会把那层压到和卡片几乎同色，
-   轨道看不见时 0% 和"没数据"就分不出来了。 */
-.dcu-bar-track { height: 10px; border-radius: 999px; background: rgba(120, 120, 120, .2); box-shadow: inset 0 0 0 1px rgba(120, 120, 120, .12); overflow: hidden; }
-.dcu-bar-fill { display: block; height: 100%; border-radius: 999px; background: var(--dcu-cpu); transition: width .3s ease; }
-/* CPU 靛蓝 / 内存琥珀是写死的两个色，不跟主题走：图例的小色块用同一对值，
-   保证"图例上的颜色"和"条上的颜色"永远一致（主题变量在这套皮肤下两者同色）。 */
-.dcu-bar-fill.mem { background: var(--dcu-mem); }
-.dcu-bar-fill.bad { background: var(--dsw-alias-state-error-primary); }
-.dcu-bar-vals { font-size: 13px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
-@media (max-width: 640px) { .dcu-bar-node { grid-template-columns: minmax(0, 1fr); gap: 6px; } .dcu-bar-vals { text-align: left; } }
-@media (prefers-reduced-motion: reduce) { .dcu-bar-fill { transition: none; } }
-
-.dcu-qbar { display: flex; height: 14px; border-radius: 999px; overflow: hidden; background: rgba(120, 120, 120, .18); }
-.dcu-qseg { height: 100%; }
-.dcu-qseg.waiting { background: var(--dsw-alias-state-warn-primary); opacity: .55; }
-.dcu-qseg.running { background: var(--dsw-alias-brand-primary); }
-.dcu-qseg.done { background: var(--dsw-alias-state-success-primary); opacity: .8; }
-.dcu-qseg.failed { background: var(--dsw-alias-state-error-primary); }
-.dcu-qseg.cancelled, .dcu-qseg.unknown { background: var(--dsw-alias-label-tertiary); opacity: .4; }
-.dcu-qkeys { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13px; color: var(--dsw-alias-label-secondary); }
-.dcu-qkey { display: inline-flex; align-items: center; gap: 6px; }
-.dcu-qkey b { font-size: 14px; font-weight: 620; font-variant-numeric: tabular-nums; color: var(--dsw-alias-label-primary); }
-.dcu-qkey .dcu-dot { width: 8px; height: 8px; border-radius: 3px; }
-
-/* ------------------------------------------------------------------ 主机卡 */
-/* align-items:start：让每张卡按自身内容定高。默认的 stretch 会把"没展开明细"
-   的那张拉到和"展开了明细"的一样高，右边留出一大片空白。
-   minmax(360px, 1fr) 在 360–375px 视口下会撑出横向滚动条（卡片 360 宽 > 可用 324–339），
-   所以窄屏用 min() 夹一下：卡片永远不超过可用宽度。 */
-.dcu-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(360px, 100%), 1fr)); gap: 20px; align-items: start; }
-.dcu-card { padding: 18px 20px 16px; display: flex; flex-direction: column; gap: 14px; }
-.dcu-card-head { display: flex; align-items: center; gap: 9px; min-width: 0; flex-wrap: wrap; }
-.dcu-node { font-size: 16px; font-weight: 620; letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dcu-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 20px; }
-.dcu-meter { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
-.dcu-meter-head { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--dsw-alias-label-tertiary); }
-.dcu-meter-track { height: 6px; border-radius: 999px; background: rgba(120, 120, 120, .2); overflow: hidden; }
-.dcu-meter-fill { height: 100%; border-radius: 999px; background: var(--dcu-cpu); transition: width .3s ease; }
-.dcu-meter-fill.warn { background: var(--dsw-alias-state-warn-primary); }
-.dcu-meter-fill.bad { background: var(--dsw-alias-state-error-primary); }
-.dcu-kv { display: flex; flex-wrap: wrap; gap: 7px 18px; font-size: 12.5px; color: var(--dsw-alias-label-secondary); }
-.dcu-kv b { color: var(--dsw-alias-label-primary); font-weight: 620; font-variant-numeric: tabular-nums; }
-@media (prefers-reduced-motion: reduce) { .dcu-meter-fill { transition: none; } }
-
-/* 统一在这里关掉所有装饰性过渡。
-   为什么集中一条而不是各组件各写一条：之前只有两条进度条被守卫，按钮、标签页、
-   折叠箭头在 reduce 下照样在动；分散写就必然漏。放最后一条，权重够、位置在末尾。 */
-@media (prefers-reduced-motion: reduce) {
-  .dcu-btn,
-  .dcu-tab,
-  .dcu-fold > summary,
-  .dcu-fold > summary::before,
-  .dcu-meter-fill,
-  .dcu-bar-fill {
-    transition: none;
-  }
+@media (prefers-reduced-motion:reduce) {
+  .dcu-root *,.dcu-settings *,.dcu-root *::before { transition:none!important; animation:none!important; }
 }
 
-/* ------------------------------------------------------------------ 折叠：明细默认收起 */
-.dcu-fold { border-top: 1px solid var(--dcu-line-soft); padding-top: 10px; }
-.dcu-fold > summary {
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--dsw-alias-label-tertiary);
-  list-style: none;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 2px 0;
-  transition: color .15s ease;
-}
-.dcu-fold > summary::-webkit-details-marker { display: none; }
-.dcu-fold > summary::before { content: '▸'; font-size: 10px; color: var(--dsw-alias-label-tertiary); transition: transform .12s ease; }
-.dcu-fold[open] > summary::before { transform: rotate(90deg); }
-.dcu-fold > summary:hover { color: var(--dsw-alias-label-secondary); }
-.dcu-agents { display: flex; flex-direction: column; gap: 6px; padding-top: 10px; }
-.dcu-agent { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; font-size: 12.5px; }
-.dcu-agent-id { font-family: var(--ds-font-family-code, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dcu-muted { color: var(--dsw-alias-label-tertiary); }
-/* 说明 / 辅助文字只在这两个 class 里定字号，别再写内联 fontSize——
-   内联会盖掉整体排版比例，同一个层级的说明文字会散成 11 / 11.5 / 12 三种。 */
-.dcu-cap { font-size: 11.5px; }
-.dcu-cap-lg { font-size: 12.5px; }
-.dcu-name { font-size: 14px; font-weight: 620; }
-.dcu-conflict { font-size: 12px; }
-
-/* ------------------------------------------------------------------ Router 对话框
-   深色板 + 琥珀描边，刻意和普通会话的浅色输入框拉开距离。收起时只留一条——
-   它是"输入口"不是"数据"，不该比上面那排状态数字更抢眼。 */
-.dcu-router {
-  margin: 0 32px 16px;
-  border-radius: var(--dcu-r-lg);
-  border: 1px solid rgba(201, 139, 58, .7);
-  background: linear-gradient(180deg, #241a11 0%, #161210 100%);
-  color: #f4e8d6;
-  box-shadow: 0 12px 30px -18px rgba(0, 0, 0, .5);
-  display: flex;
-  flex-direction: column;
-  flex: none;
-  min-height: 0;
-}
-.dcu-router.collapsed { padding-bottom: 0; }
-.dcu-router-head { display: flex; align-items: center; gap: 10px; padding: 11px 18px; border-bottom: 1px solid rgba(201, 139, 58, .35); flex-wrap: wrap; }
-.dcu-router.collapsed .dcu-router-head { border-bottom: 0; }
-.dcu-router-title { font-size: 11.5px; font-weight: 700; letter-spacing: .14em; color: #f0c07a; text-transform: uppercase; white-space: nowrap; }
-/* min-width:0 让 tag 真的能被省略号截断；按钮 white-space:nowrap 免得窄屏下
-   「展开对话」自己折成两行（折了之后按钮高度翻倍，把深色条撑高）。 */
-.dcu-router-tag { font-size: 12.5px; color: rgba(244, 232, 214, .62); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1 1 80px; }
-.dcu-router-head .dcu-btn { white-space: nowrap; flex: none; }
-.dcu-router-log { max-height: 188px; overflow: auto; padding: 14px 18px; display: flex; flex-direction: column; gap: 12px; font-size: 13px; line-height: 1.6; }
-.dcu-turn { display: flex; flex-direction: column; gap: 5px; }
-.dcu-turn-user { color: #f0c07a; font-weight: 620; }
-.dcu-turn-reply { color: #efe4d3; white-space: pre-wrap; word-break: break-word; }
-.dcu-turn-meta { font-size: 11.5px; color: rgba(244, 232, 214, .5); }
-.dcu-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-.dcu-action { font-family: var(--ds-font-family-code, ui-monospace, monospace); font-size: 11px; border: 1px solid rgba(201, 139, 58, .4); border-radius: 6px; padding: 2px 7px; color: #e8d3b3; }
-.dcu-router-input { display: flex; gap: 10px; padding: 12px 18px 14px; border-top: 1px solid rgba(201, 139, 58, .35); align-items: flex-end; }
-.dcu-router-input textarea { flex: 1 1 auto; resize: none; min-height: 40px; max-height: 120px; border-radius: var(--dcu-r-sm); border: 1px solid rgba(201, 139, 58, .45); background: rgba(0, 0, 0, .28); color: #f4e8d6; padding: 10px 12px; font-size: 13px; font-family: inherit; line-height: 1.5; outline: none; }
-.dcu-router-input textarea:focus { border-color: rgba(240, 192, 122, .8); }
-.dcu-router-input textarea::placeholder { color: rgba(244, 232, 214, .42); }
-.dcu-router-send { border: 1px solid rgba(201, 139, 58, .6); background: rgba(201, 139, 58, .18); color: #f0c07a; border-radius: var(--dcu-r-sm); padding: 10px 16px; font-size: 13px; font-weight: 600; cursor: pointer; }
-.dcu-router-send:hover:not(:disabled) { background: rgba(201, 139, 58, .28); }
-.dcu-router-send:disabled { opacity: .45; cursor: default; }
-.dcu-hint { padding: 0 18px 12px; font-size: 11.5px; color: rgba(244, 232, 214, .45); }
-@media (max-width: 720px) { .dcu-router { margin: 0 18px 14px; } }
-
-/* ------------------------------------------------------------------ 同步 / 运行记录 */
-.dcu-run { padding: 18px 22px 20px; display: flex; flex-direction: column; gap: 14px; }
-.dcu-run-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.dcu-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-.dcu-table th { text-align: left; font-weight: 600; color: var(--dsw-alias-label-tertiary); padding: 8px 10px; border-bottom: 1px solid var(--dcu-line-soft); font-size: 11.5px; letter-spacing: .04em; text-transform: uppercase; }
-.dcu-table td { padding: 8px 10px; border-bottom: 1px solid var(--dcu-line-soft); vertical-align: top; }
-.dcu-table tr:last-child td { border-bottom: 0; }
-.dcu-mono { font-family: var(--ds-font-family-code, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 11.5px; }
-.dcu-badge { border-radius: 6px; padding: 1px 8px; font-size: 11.5px; font-weight: 500; border: 1px solid var(--dcu-line); white-space: nowrap; }
-.dcu-badge.done { color: var(--dsw-alias-state-success-primary); border-color: var(--dsw-alias-state-success-primary); }
-.dcu-badge.partial, .dcu-badge.conflict { color: var(--dsw-alias-state-warn-primary); border-color: var(--dsw-alias-state-warn-primary); }
-.dcu-badge.failed { color: var(--dsw-alias-state-error-primary); border-color: var(--dsw-alias-state-error-primary); }
-.dcu-badge.running { color: var(--dsw-alias-brand-primary); border-color: var(--dsw-alias-brand-primary); }
-
-/* ------------------------------------------------------------------ 表单 / 设置页 */
-.dcu-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-.dcu-input { border: 1px solid var(--dcu-line); border-radius: var(--dcu-r-sm); padding: 8px 12px; font-size: 13px; background: var(--dcu-surface); color: var(--dsw-alias-label-primary); font-family: inherit; }
-.dcu-input:focus, .dcu-select:focus { outline: none; border-color: var(--dsw-alias-brand-primary); }
-.dcu-select { border: 1px solid var(--dcu-line); border-radius: var(--dcu-r-sm); padding: 8px 10px; font-size: 13px; background: var(--dcu-surface); color: var(--dsw-alias-label-primary); font-family: inherit; }
-.dcu-section-title { font-size: 15px; font-weight: 620; letter-spacing: -.01em; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-
-/* 分区标题：标题 + 一条延伸到底的细线。比"再加一张卡"轻，又比 13px 纯文字明确。 */
-.dcu-overview { display: flex; flex-direction: column; gap: 20px; }
-.dcu-rule { display: flex; align-items: baseline; gap: 12px; padding-top: 4px; }
-.dcu-rule::after { content: ''; flex: 1 1 auto; height: 1px; background: var(--dcu-line-soft); transform: translateY(-4px); }
-.dcu-rule-title { font-size: 17px; font-weight: 620; letter-spacing: -.015em; }
-.dcu-rule-note { font-size: 12.5px; color: var(--dsw-alias-label-tertiary); white-space: nowrap; }
-.dcu-settings { display: flex; flex-direction: column; gap: 18px; padding: 6px 2px 12px; }
-.dcu-roots { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--dsw-alias-label-tertiary); font-family: var(--ds-font-family-code, ui-monospace, monospace); }
-
-/* 同步行：summary 是 grid，折叠箭头绝对定位（参与布局会挤掉第一列）。 */
-.dcu-fold > summary.dcu-sync-row {
-  display: grid;
-  grid-template-columns: minmax(110px, 1.1fr) auto minmax(0, 1fr) auto;
-  gap: 14px;
-  align-items: center;
-  font-size: 13px;
-  font-weight: 500;
-  padding: 11px 0 11px 18px;
-  border-bottom: 1px solid var(--dcu-line-soft);
-  position: relative;
-}
-.dcu-fold > summary.dcu-sync-row::before { position: absolute; left: 0; top: 50%; transform: translateY(-50%); }
-.dcu-fold[open] > summary.dcu-sync-row::before { transform: translateY(-50%) rotate(90deg); }
-.dcu-sync-row:last-of-type { border-bottom: 0; }
-.dcu-sync-name { font-size: 13.5px; font-weight: 620; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dcu-sync-note { font-size: 12px; color: var(--dsw-alias-label-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 `
 
 function ensureStyle() {
@@ -623,11 +473,11 @@ function Spark({ points, width = 120, height = 30 }) {
     { className: 'dcu-spark', viewBox: `0 0 ${width} ${height}`, preserveAspectRatio: 'none', role: 'img', 'aria-label': 'CPU 与内存趋势' },
     h('line', { x1: 0, y1: height - 1, x2: width, y2: height - 1, stroke: 'var(--dsw-alias-border-l2)', strokeWidth: 0.5, vectorEffect: 'non-scaling-stroke' }),
     h('line', { x1: 0, y1: height / 2, x2: width, y2: height / 2, stroke: 'var(--dsw-alias-border-l2)', strokeWidth: 0.5, strokeDasharray: '2 2', vectorEffect: 'non-scaling-stroke' }),
-    memArea ? h('path', { d: memArea, fill: '#d98a2b', opacity: 0.16, stroke: 'none' }) : null,
-    cpuArea ? h('path', { d: cpuArea, fill: '#3d7bfd', opacity: 0.16, stroke: 'none' }) : null,
-    memPath ? h('path', { d: memPath, fill: 'none', stroke: '#d98a2b', strokeWidth: 1.3, vectorEffect: 'non-scaling-stroke', opacity: 0.95 }) : null,
-    cpuPath ? h('path', { d: cpuPath, fill: 'none', stroke: '#3d7bfd', strokeWidth: 1.6, vectorEffect: 'non-scaling-stroke' }) : null,
-    h('g', { style: { color: '#3d7bfd' } }, dotAt(lastCpu)),
+    memArea ? h('path', { d: memArea, fill: 'var(--dcu-mem)', opacity: 0.16, stroke: 'none' }) : null,
+    cpuArea ? h('path', { d: cpuArea, fill: 'var(--dcu-cpu)', opacity: 0.16, stroke: 'none' }) : null,
+    memPath ? h('path', { d: memPath, fill: 'none', stroke: 'var(--dcu-mem)', strokeWidth: 1.3, vectorEffect: 'non-scaling-stroke', opacity: 0.95 }) : null,
+    cpuPath ? h('path', { d: cpuPath, fill: 'none', stroke: 'var(--dcu-cpu)', strokeWidth: 1.6, vectorEffect: 'non-scaling-stroke' }) : null,
+    h('g', { style: { color: 'var(--dcu-cpu)' } }, dotAt(lastCpu)),
   )
 }
 
@@ -705,12 +555,12 @@ function HealthStrip({ data }) {
       label: '运行中任务',
       // 大数字放"正在跑的条数"，其余分桶退到注解行：一格里只能有一个重心。
       value: `${running}`,
-      note: `排队 ${waiting}${failed ? ` · 失败 ${failed}` : ''} · 共 ${total} 条`,
+      note: `排队 ${waiting} · 历史失败 ${failed} · 共 ${total} 条`,
       title: '任务队列分桶（pending/queued 归入排队，claimed/running 归入运行）',
     }),
     h(Stat, {
       tone: syncTone,
-      label: '最近同步',
+      label: '最近完成的同步',
       value: syncText(syncStatus),
       note: workspaces.length ? `${workspaces.length} 个工作区` : '还没有工作区',
       title: '最近完成的那一轮同步的 status（done/partial/failed）；逐工作区的结果与冲突数见下方「同步状态」',
@@ -742,8 +592,8 @@ function ResourceBars({ hosts }) {
       h(
         'div',
         { className: 'dcu-legend' },
-        h('span', null, h('span', { className: 'dcu-legend-swatch', style: { background: '#3d7bfd' } }), ' CPU'),
-        h('span', null, h('span', { className: 'dcu-legend-swatch', style: { background: '#d98a2b' } }), ' 内存'),
+        h('span', null, h('span', { className: 'dcu-legend-swatch', style: { background: 'var(--dcu-cpu)' } }), ' CPU'),
+        h('span', null, h('span', { className: 'dcu-legend-swatch', style: { background: 'var(--dcu-mem)' } }), ' 内存'),
       ),
     ),
     h(
@@ -754,7 +604,10 @@ function ResourceBars({ hosts }) {
         const cpu = num(metrics.cpu_percent)
         const mem = num(metrics.mem_percent)
         const fill = (value, cls) =>
-          h('div', { className: 'dcu-bar-track' }, h('span', { className: `dcu-bar-fill ${cls}${value !== null && value >= 90 ? ' bad' : ''}`, style: { width: `${value === null ? 0 : Math.max(0, Math.min(100, value))}%` } }))
+          // 不把整条填色改成红色：那会打破"CPU 永远蓝、内存永远紫"的固定色相，
+          // 同一张图里冒出第三种颜色，就读不出它属于哪根指标了。高负载由数值变红提示。
+          h('div', { className: 'dcu-bar-track' }, h('span', { className: `dcu-bar-fill ${cls}`, style: { width: `${value === null ? 0 : Math.max(0, Math.min(100, value))}%` } }))
+        const hot = (value) => value !== null && value >= 90
         return h(
           'div',
           { className: 'dcu-bar-node', key: host.node_id },
@@ -768,13 +621,15 @@ function ResourceBars({ hosts }) {
           h(
             'span',
             { className: 'dcu-bar-vals' },
-            `${percent(cpu)} · ${percent(mem)}`,
+            h('span', { className: hot(cpu) ? 'dcu-hot' : null }, percent(cpu)),
+            ' · ',
+            h('span', { className: hot(mem) ? 'dcu-hot' : null }, percent(mem)),
             num(metrics.cpu_count) ? h('span', { className: 'dcu-muted' }, ` / ${metrics.cpu_count} 核`) : null,
           ),
         )
       }),
     ),
-    h('div', { className: 'dcu-chart-foot' }, '刻度 0–100%，内存条转红即已达 90%'),
+    h('div', { className: 'dcu-chart-foot' }, '刻度 0–100%；数值标红表示该项已达 90% 以上'),
   )
 }
 
@@ -787,7 +642,7 @@ function QueueCard({ queue }) {
     ['waiting', '排队'],
     ['running', '运行中'],
     ['done', '完成'],
-    ['failed', '失败'],
+    ['failed', '历史失败'],
     ['cancelled', '取消'],
   ]
   const other = (counts.unknown || 0)
@@ -861,9 +716,38 @@ function HostCard({ host }) {
     .join(' · ')
   const workers = num(metrics.workers)
   const maxWorkers = num(metrics.max_workers)
+  // 与顶部健康带共用同一套判定：否则会出现「标题说高负载、这张卡说在线」。
+  const cond = nodeCondition(host)
+  const level = NODE_LEVEL[cond]
+  const cpuValue = num(metrics.cpu_percent)
+  const memValue = num(metrics.mem_percent)
+  // 异常必须带原因。只给一个红点，用户还得自己去猜是 CPU 高还是采样断了。
+  const reason =
+    cond === 'offline'
+      ? `最后一次上报 ${agoText(metrics.ts)}`
+      : cond === 'stale'
+        ? `采样停在 ${agoText(metrics.ts)}`
+        : cond === 'hot'
+          ? [
+              cpuValue !== null && cpuValue >= 90 ? `CPU ${Math.round(cpuValue)}%` : null,
+              memValue !== null && memValue >= 90 ? `内存 ${Math.round(memValue)}%` : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')
+          : cond === 'degraded'
+            ? `${(host.plugins_down || []).length} 个能力不可用`
+            : null
   return h(
     'article',
-    { className: 'dcu-card' },
+    { className: 'dcu-card dcu-host-card', 'data-state': level },
+    h(
+      'div',
+      { className: 'dcu-host-status' },
+      h('span', { className: 'dcu-status-pill', 'data-state': level }, h(Dot, { tone: NODE_TONE[cond] }), NODE_TEXT[cond]),
+      reason
+        ? h('span', { className: 'dcu-host-reason' }, reason)
+        : h('span', { className: 'dcu-muted dcu-cap' }, host.role === 'router' ? '路由节点' : '执行节点'),
+    ),
     // 卡面只留「这台机是谁、现在多忙、带多少活」：主机名 / OS / CPU / 内存 / worker / 能力数。
     // mesh IP、网卡速率、采样点、agent 逐个状态都属于明细，默认收在下面的 details 里。
     h(
@@ -913,8 +797,17 @@ function HostCard({ host }) {
           num(metrics.uptime_s) ? h('span', null, '已运行 ', h('b', null, uptimeText(metrics.uptime_s))) : null,
         ),
         kindText ? h('div', { className: 'dcu-muted dcu-cap' }, kindText) : null,
-        h('div', { className: 'dcu-bar-tag', style: { marginTop: 2 } }, 'CPU / 内存 最近采样'),
-        h(Spark, { points: host.history || [], height: 34 }),
+        h(
+          'div',
+          { className: 'dcu-host-trend' },
+          h(
+            'div',
+            { className: 'dcu-trend-caption' },
+            h('span', null, 'CPU / 内存趋势'),
+            h('span', null, host.alive ? '最近采样' : '最后已知采样'),
+          ),
+          h(Spark, { points: host.history || [], height: 48 }),
+        ),
         h(
           'div',
           { className: 'dcu-agents' },
@@ -974,7 +867,7 @@ function SyncSummary({ workspaces }) {
               : h('span', { className: 'dcu-muted' }, '无冲突'),
             note ? `  ${note}` : '',
           ),
-          h('span', { className: 'dcu-muted dcu-cap' }, last.finished ? agoText(last.finished) : '—'),
+          h('span', { className: 'dcu-sync-time' }, last.finished ? agoText(last.finished) : '—'),
         ),
         h(
           'div',
@@ -996,6 +889,93 @@ function SyncSummary({ workspaces }) {
 }
 
 /* ------------------------------------------------------------------ 总览 */
+// 首屏两段：实时健康带（本页重心）+ 工作台（左节点 / 右任务与同步）。
+// 状态判定集中在一处，避免"标题说高负载、卡片说在线"这种自相矛盾。
+// 首屏两段：实时健康带（本页重心）+ 工作台（左节点 / 右任务与同步）。
+// 状态判定集中在一处，避免"标题说高负载、卡片说在线"这种自相矛盾。
+// 首屏两段：实时健康带（本页重心）+ 工作台（左节点 / 右任务与同步）。
+// 状态判定集中在一处，避免"标题说高负载、卡片说在线"这种自相矛盾。
+// 首屏两段：实时健康带（本页重心）+ 工作台（左节点 / 右任务与同步）。
+// 状态判定集中在一处，避免"标题说高负载、卡片说在线"这种自相矛盾。
+function nodeCondition(host) {
+  if (!host.alive) return 'offline'
+  if (toneOfNode(host) === 'warn') return 'stale'
+  const cpu = num(host.metrics && host.metrics.cpu_percent)
+  const mem = num(host.metrics && host.metrics.mem_percent)
+  if ((cpu !== null && cpu >= 90) || (mem !== null && mem >= 90)) return 'hot'
+  if ((host.plugins_down || []).length) return 'degraded'
+  return 'ok'
+}
+
+/** 节点状态 → 文案。同一台机器在健康带和卡片里必须说同一句话。 */
+const NODE_TEXT = { ok: '在线', hot: '高负载', stale: '采样过期', degraded: '能力异常', offline: '离线' }
+const NODE_TONE = { ok: 'ok', hot: 'warn', stale: 'warn', degraded: 'warn', offline: 'bad' }
+/** 卡片顶条/胶囊用的 data-state（ok / warn / bad），把四种异常压到三档颜色。 */
+const NODE_LEVEL = { ok: 'ok', hot: 'warn', stale: 'warn', degraded: 'warn', offline: 'bad' }
+
+function ClusterHealth({ data, hosts, onRefresh }) {
+  const queue = (data && data.queue) || { counts: {} }
+  const running = (queue.counts && queue.counts.running) || 0
+  const conds = hosts.map((host) => nodeCondition(host))
+  const offline = conds.filter((c) => c === 'offline').length
+  const hot = conds.filter((c) => c === 'hot').length
+  const stale = conds.filter((c) => c === 'stale').length
+  const degraded = conds.filter((c) => c === 'degraded').length
+  const state = !hosts.length ? 'unknown' : offline ? 'bad' : hot || stale || degraded ? 'warn' : 'ok'
+  const headline = !hosts.length
+    ? '正在等待节点接入'
+    : offline
+      ? `${offline} 台节点离线`
+      : hot
+        ? `集群在线 · ${hot} 台节点高负载`
+        : stale
+          ? '集群在线 · 采样已过期'
+          : degraded
+            ? '集群在线 · 部分能力不可用'
+            : '集群运行正常'
+  const leadsUp = hosts.filter((host) => nodeCondition(host) !== 'offline').length
+  const summary = hosts.length
+    ? `${leadsUp} / ${hosts.length} 台节点在线 · ${running} 个任务运行中 · 每 5 秒自动刷新`
+    : '注册节点后，这里会显示实时负载与能力状态。'
+  return h(
+    'section',
+    { className: 'dcu-health', 'data-state': state, 'aria-label': '集群实时状态' },
+    h(
+      'div',
+      { className: 'dcu-health-copy' },
+      h('div', { className: 'dcu-health-eyebrow' }, h('span', { className: 'dcu-health-signal' }), '集群实时状态'),
+      h('h1', null, headline),
+      h('p', null, summary),
+      h(
+        'div',
+        { className: 'dcu-health-tags' },
+        h('span', null, offline ? `离线 ${offline}` : hosts.length ? '节点连接正常' : '暂无连接'),
+        hot ? h('span', { className: 'attention' }, `高负载 ${hot}`) : null,
+        stale ? h('span', { className: 'attention' }, `采样过期 ${stale}`) : null,
+        degraded ? h('span', { className: 'attention' }, `能力异常 ${degraded}`) : null,
+      ),
+    ),
+    hosts.length
+      ? h(
+          'div',
+          { className: 'dcu-health-nodes', 'aria-label': '逐节点状态' },
+          hosts.map((host) => {
+            const cond = nodeCondition(host)
+            const cpu = num(host.metrics && host.metrics.cpu_percent)
+            return h(
+              'div',
+              { key: host.node_id, className: 'dcu-health-node', 'data-state': NODE_LEVEL[cond] },
+              h('span', { className: 'dcu-health-node-mark' }),
+              h('strong', { title: host.node_id }, host.node_id),
+              h('span', { className: 'dcu-health-node-state' }, NODE_TEXT[cond]),
+              h('span', { className: 'dcu-health-node-metric' }, cpu === null ? '—' : `CPU ${Math.round(cpu)}%`),
+            )
+          }),
+        )
+      : null,
+  )
+}
+
 function Overview({ data, error, history }) {
   if (error && !data) return h('div', { className: 'dcu-error' }, error)
   if (!data) return h('div', { className: 'dcu-muted' }, '读取中…')
@@ -1003,19 +983,35 @@ function Overview({ data, error, history }) {
   return h(
     'div',
     { className: 'dcu-overview' },
+    h(ClusterHealth, { data, hosts }),
+    error ? h('div', { className: 'dcu-error', role: 'alert' }, error) : null,
     h(HealthStrip, { data }),
-    error ? h('div', { className: 'dcu-error' }, error) : null,
-    h('div', { className: 'dcu-charts' }, h(ResourceBars, { hosts }), h(QueueCard, { queue: data.queue })),
-    h(SyncSummary, { workspaces: data.workspaces }),
-    // 分区标题：一条细线 + 标题，把「总览数字」与「逐节点明细」在视觉上切成两段。
-    // 没有它时节点卡会紧贴在同步卡下面，看起来像同步卡的一部分。
-    h('div', { className: 'dcu-rule' }, h('span', { className: 'dcu-rule-title' }, '节点'), h('span', { className: 'dcu-rule-note' }, `${hosts.length} 台 · 明细默认折叠`)),
-    hosts.length === 0
-      ? h('div', { className: 'dcu-muted' }, '没有节点被注册。')
-      : h('div', { className: 'dcu-cards' }, hosts.map((host) => h(HostCard, { key: host.node_id, host }))),
+    h(
+      'div',
+      { className: 'dcu-workbench' },
+      h(
+        'div',
+        { className: 'dcu-fleet' },
+        h(
+          'div',
+          { className: 'dcu-rule' },
+          h('span', { className: 'dcu-rule-title' }, '节点运行状况'),
+          h('span', { className: 'dcu-rule-note' }, `${hosts.length} 台 · 明细默认折叠`),
+        ),
+        hosts.length
+          ? h('div', { className: 'dcu-cards' }, hosts.map((host) => h(HostCard, { key: host.node_id, host })))
+          : h('div', { className: 'dcu-empty' }, '还没有节点注册到控制面。'),
+        h(ResourceBars, { hosts }),
+      ),
+      h(
+        'aside',
+        { className: 'dcu-operations', 'aria-label': '任务与同步' },
+        h(QueueCard, { queue: data.queue }),
+        h(SyncSummary, { workspaces: data.workspaces }),
+      ),
+    ),
   )
 }
-
 /* ------------------------------------------------------------------ Router */
 function RouterBox({ onAfter }) {
   const [items, setItems] = useState([])
@@ -1089,7 +1085,7 @@ function RouterBox({ onAfter }) {
       'aria-label': 'Router 对话框',
       // 内联背景：主题插件（dream skin）有一条 `[data-dsh-dream-skin-composer]{background:transparent}`
       // 的规则会盖掉同名 class 的 background，而 Router 板块必须保持深色才和普通会话拉开距离。
-      style: { background: 'linear-gradient(180deg, #241a11 0%, #161210 100%)' },
+      style: { background: 'var(--dcu-command)' },
     },
     h(
       'header',
@@ -1098,8 +1094,8 @@ function RouterBox({ onAfter }) {
       h('span', { className: 'dcu-router-title' }, 'Router · 常驻'),
       h('span', { className: 'dcu-router-tag' }, collapsed ? lastLine : '真实 LLM 会话 · 只会调 cluster_* 工具（没有 shell）'),
       h('span', { className: 'dcu-spacer' }),
-      h('button', { className: 'dcu-btn', style: { background: 'transparent', color: '#f0c07a', borderColor: 'rgba(201,139,58,.45)' }, onClick: () => setCollapsed(!collapsed) }, collapsed ? '展开对话' : '收起'),
-      collapsed ? null : h('button', { className: 'dcu-btn', style: { background: 'transparent', color: '#f0c07a', borderColor: 'rgba(201,139,58,.45)' }, onClick: load, disabled: busy }, '刷新记录'),
+      h('button', { className: 'dcu-btn', style: { background: 'transparent', color: 'var(--dcu-command-ink)', borderColor: 'var(--dcu-command-muted)' }, onClick: () => setCollapsed(!collapsed) }, collapsed ? '展开对话' : '收起'),
+      collapsed ? null : h('button', { className: 'dcu-btn', style: { background: 'transparent', color: 'var(--dcu-command-ink)', borderColor: 'var(--dcu-command-muted)' }, onClick: load, disabled: busy }, '刷新记录'),
     ),
     collapsed
       ? null
@@ -1481,7 +1477,7 @@ function ClusterPanel() {
     h(
       'header',
       { className: 'dcu-head' },
-      h('span', { className: 'dcu-title' }, 'Cluster'),
+      h('span', { className: 'dcu-title' }, h('span', { className: 'dcu-brandmark', 'aria-hidden': true }, h('i'), h('i'), h('i'), h('i')), 'Cluster'),
       h('span', { className: 'dcu-sub' }, hosts ? `${(hosts.summary || {}).alive ?? '—'}/${(hosts.summary || {}).nodes ?? '—'} 节点 · ${(hosts.summary || {}).agents ?? '—'} 能力 · 每 5s 刷新` : '读取中…'),
       h('span', { className: 'dcu-spacer' }),
       h('button', { className: 'dcu-btn', onClick: () => { setTick(tick + 1); loadHosts() } }, '刷新'),

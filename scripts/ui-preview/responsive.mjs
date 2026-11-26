@@ -87,19 +87,28 @@ for (const w of WIDTHS) {
       const r = el.getBoundingClientRect();
       if (r.width > 0 && r.right > vw + 1) escapes.push((el.className || el.tagName).toString().slice(0, 32));
     }
+    // 列数从实际 grid 轨道算；元素不存在时给 null，避免 getComputedStyle(null) 抛错
+    // （1.2.0 起 .dcu-charts 已并入工作台主列，不再是独立容器）。
+    const cols = (sel) => {
+      const el = document.querySelector(sel);
+      if (!el) return null;
+      const rows = getComputedStyle(el).gridTemplateColumns;
+      return rows && rows !== 'none' ? rows.split(' ').length : null;
+    };
     return {
       vw,
       hScroll: document.documentElement.scrollWidth > vw + 1,
       bodyHScroll: body ? body.scrollWidth > body.clientWidth + 1 : null,
       escapes: [...new Set(escapes)].slice(0, 5),
-      statCols: getComputedStyle(document.querySelector('.dcu-strip')).gridTemplateColumns.split(' ').length,
-      chartCols: getComputedStyle(document.querySelector('.dcu-charts')).gridTemplateColumns.split(' ').length,
+      statCols: cols('.dcu-strip'),
+      workbenchCols: cols('.dcu-workbench'),
+      opsCols: cols('.dcu-operations'),
     };
   })())`)
   const o = JSON.parse(m)
   const ok = !o.hScroll && !o.bodyHScroll && o.escapes.length === 0
   results.push({ w, ok, ...o })
-  console.log(`${ok ? '  PASS' : '  FAIL'}  ${String(w).padStart(4)}px  状态栅格=${o.statCols}列 图表=${o.chartCols}列${ok ? '' : `  <- 横向溢出: ${JSON.stringify(o)}`}`)
+  console.log(`${ok ? '  PASS' : '  FAIL'}  ${String(w).padStart(4)}px  指标条=${o.statCols}列 工作台=${o.workbenchCols}列${ok ? '' : `  <- 横向溢出: ${JSON.stringify(o)}`}`)
 }
 
 page.close()

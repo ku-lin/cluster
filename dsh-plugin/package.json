@@ -1,6 +1,6 @@
 {
   "name": "dsh-cluster-ui",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "private": true,
   "description": "DSH 前端插件：把 cluster（多机 Agent 集群）的主机/agent 状态、Router 对话、工作区同步搬进 DeepSeek Harness 的设置页与主面板。Router 走真实 LLM 会话（cluster-router preset + 4 个 cluster_* 工具），确定性指令仍走规则快路径。",
   "keywords": ["dsh", "deepseek-harness", "cluster", "router", "multi-agent"],

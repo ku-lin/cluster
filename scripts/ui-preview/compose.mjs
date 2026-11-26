@@ -5,9 +5,16 @@
  * 只为拼图引一个原生依赖不值得。这里用 Chrome 渲染一个 HTML 拼版再截图，顺带让
  * 标注文字也用与界面一致的无衬线字体。
  *
- * 用法：node scripts/ui-preview/compose.mjs
+ * 用法：
+ *   node scripts/ui-preview/compose.mjs                 # 拼 ui-1.2.0 的全部场景
+ *   node scripts/ui-preview/compose.mjs --verify-only   # 只复核哈希，不拼图
+ *
+ * 版本标注读的是 shoot.mjs 在拍摄时**落盘**的 before/manifest.json，不再实时问服务。
+ * 踩过的坑：早期版本每次拼图都现取 /manifest，历史截图的副标题会被后来重启的服务
+ * 改标 —— 图上印的"基线"和图里实际拍的代码就脱钩了。现在拍摄即存证，拼图只认账。
  */
 import { spawn, execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -17,7 +24,13 @@ const repo = join(here, '..', '..')
 const wsEntry = join('S:', 'deepseek_harness', 'node_modules', 'ws', 'index.js')
 const WebSocket = (await import(pathToFileURL(wsEntry).href)).default
 
-const EVID = join(repo, 'docs', 'evidence', 'ui-1.1.0')
+const argv = process.argv.slice(2)
+const VERIFY_ONLY = argv.includes('--verify-only')
+const EVID_ARG = (() => {
+  const i = argv.indexOf('--evid')
+  return i >= 0 ? argv[i + 1] : 'docs/evidence/ui-1.2.0'
+})()
+const EVID = join(repo, EVID_ARG)
 const PORT = 9342
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -29,6 +42,37 @@ const SCENES = [
   { id: 'sync-tab-light', title: '工作区同步页', note: '第二个标签页' },
   { id: 'settings-light', title: '设置页 Cluster 板块', note: 'DSH 设置页内的落点' },
 ]
+
+/** 拍摄时落盘的身份清单：拼图副标题与复核都以它为准，不再问服务。 */
+function loadShotManifest(dir) {
+  const file = join(dir, 'manifest.json')
+  if (!existsSync(file)) {
+    throw new Error(
+      `缺 ${EVID_ARG}\\${dir.endsWith('before') ? 'before' : 'after'}\\manifest.json —— 这份截图没带身份，` +
+        '不能进对比图。用新版 shoot.mjs 重新拍。',
+    )
+  }
+  return JSON.parse(readFileSync(file, 'utf8'))
+}
+
+function verifyShots(dir, label) {
+  const doc = loadShotManifest(dir)
+  const problems = []
+  for (const shot of doc.shots) {
+    const png = join(dir, `${shot.id}.png`)
+    if (!existsSync(png)) {
+      problems.push(`${label}/${shot.id}.png 不在盘上`)
+      continue
+    }
+    const actual = createHash('sha256').update(readFileSync(png)).digest('hex')
+    if (actual !== shot.pngSha256) {
+      problems.push(
+        `${label}/${shot.id}.png 哈希不符\n    manifest ${shot.pngSha256}\n    实际     ${actual} —— 图被改过或换过`,
+      )
+    }
+  }
+  return { doc, problems }
+}
 
 function connect(url) {
   return new Promise((resolve, reject) => {
@@ -59,31 +103,38 @@ function connect(url) {
 
 const b64 = (path) => `data:image/png;base64,${readFileSync(path).toString('base64')}`
 
-const rev = (() => {
-  try {
-    return execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim()
-  } catch {
-    return 'HEAD'
+const beforeResult = verifyShots(join(EVID, 'before'), 'before')
+const hasAfter = existsSync(join(EVID, 'after', 'manifest.json'))
+const afterResult = hasAfter ? verifyShots(join(EVID, 'after'), 'after') : null
+const problems = [...beforeResult.problems, ...(afterResult?.problems || [])]
+const beforeDoc = beforeResult.doc
+const afterDoc = afterResult?.doc
+const ids = SCENES.map(s => s.id).sort().join(',')
+for (const doc of [beforeDoc, afterDoc].filter(Boolean)) {
+  if (doc.shots.map(s => s.id).sort().join(',') !== ids) problems.push('Scene inventory mismatch')
+  if (doc.server.baseline.rev !== '751ea01') problems.push('Expected baseline 751ea01')
+}
+if (beforeDoc.which !== 'baseline' || (afterDoc && afterDoc.which !== 'after')) problems.push('Wrong capture side')
+if (afterDoc) {
+  for (const key of ['tokensSha256', 'fixturesSha256']) {
+    if (beforeDoc.server[key] !== afterDoc.server[key]) problems.push(`Different ${key}`)
   }
-})()
-
-/**
- * 版本标注不再取"当前 HEAD"，而是问预览服务要 /manifest。
- *
- * 踩过的坑：最初副标题印 `git rev-parse HEAD`，而 baseline 快照是在**服务启动时**
- * 用 `HEAD:...` 取的。服务先起、期间 HEAD 变了，图上就会标一个不是实际拍到的基线。
- * 现在基线提交写死在 server.mjs 的 BASELINE_REV 里，两张图各自的内容哈希由服务
- * 返回，图上的字因此可被独立复核。
- */
-const manifest = await (async () => {
-  try {
-    const res = await fetch(`http://127.0.0.1:${process.env.PREVIEW_PORT || 3899}/manifest`)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return await res.json()
-  } catch (error) {
-    throw new Error(`取 /manifest 失败（预览服务没起？）：${error.message}`)
+  for (const key of ['capturedViewport', 'frozenClockMs']) {
+    if (JSON.stringify(beforeDoc[key]) !== JSON.stringify(afterDoc[key])) problems.push(`Different ${key}`)
   }
-})()
+}
+if (problems.length) throw new Error(problems.join('\n'))
+console.log(`Verified ${beforeDoc.shots.length + (afterDoc?.shots.length || 0)} PNG hashes`)
+if (VERIFY_ONLY) process.exit(0)
+if (!afterDoc) throw new Error('Capture after first; before-only verification passed')
+const manifest = {
+  baselineRev: beforeDoc.server.baseline.rev,
+  baselineSha256: beforeDoc.server.baseline.clientSha256,
+  afterSha256: afterDoc.server.after.clientSha256,
+  tokensSha256: beforeDoc.server.tokensSha256,
+  fixturesSha256: beforeDoc.server.fixturesSha256,
+  frozenClockMs: beforeDoc.frozenClockMs,
+}
 
 const short = (h, n = 10) => String(h || '').slice(0, n)
 
@@ -176,12 +227,35 @@ for (const scene of SCENES) {
   await conn.send('Emulation.setDeviceMetricsOverride', { width: Math.max(w, VIEWPORT_W), height: h, deviceScaleFactor: 1, mobile: false })
   await sleep(400)
   const shot = await conn.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false })
+  const png = Buffer.from(shot.data, 'base64')
   const file = join(outDir, `${scene.id}.png`)
-  writeFileSync(file, Buffer.from(shot.data, 'base64'))
-  console.log(`  ${scene.id}.png  ${w}x${h}`)
+  writeFileSync(file, png)
+  console.log(`  ${scene.id}.png  ${w}x${h}  sha256:${createHash('sha256').update(png).digest('hex').slice(0, 16)}`)
 }
 
 conn.close()
 browser.close()
 child.kill()
+
+// 对比图自己也带一份小清单：每张对比 PNG 的哈希 + 它引用的 before/after 清单哈希。
+const compareManifest = {
+  schema: 'ui-preview/compare/1',
+  evidenceDir: EVID_ARG,
+  baselineRev: manifest.baselineRev,
+  baselineClientSha256: manifest.baselineSha256,
+  afterClientSha256: manifest.afterSha256,
+  tokensSha256: manifest.tokensSha256,
+  fixturesSha256: manifest.fixturesSha256,
+  frozenClockMs: manifest.frozenClockMs,
+  sources: {
+    beforeManifest: createHash('sha256').update(readFileSync(join(EVID, 'before', 'manifest.json'))).digest('hex'),
+    afterManifest: createHash('sha256').update(readFileSync(join(EVID, 'after', 'manifest.json'))).digest('hex'),
+  },
+  images: SCENES.map((s) => {
+    const f = join(outDir, `${s.id}.png`)
+    return { id: s.id, file: `${EVID_ARG}/compare/${s.id}.png`, pngSha256: createHash('sha256').update(readFileSync(f)).digest('hex') }
+  }),
+}
+writeFileSync(join(outDir, 'manifest.json'), `${JSON.stringify(compareManifest, null, 2)}\n`, 'utf8')
 console.log(`\n对比图 -> ${outDir}`)
+console.log(`manifest -> ${join(outDir, 'manifest.json')}`)

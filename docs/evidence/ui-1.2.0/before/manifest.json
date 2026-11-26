@@ -1,0 +1,252 @@
+{
+  "schema": "ui-preview/screenshots/2",
+  "which": "baseline",
+  "evidenceDir": "docs/evidence/ui-1.2.0",
+  "capturedViewport": {
+    "width": 1440,
+    "height": 1000,
+    "deviceScaleFactor": 1
+  },
+  "frozenClockMs": 1795000000000,
+  "server": {
+    "base": "http://127.0.0.1:3899",
+    "baseline": {
+      "rev": "751ea01",
+      "fullSha": "751ea010bd77ba6adbb02bc1f3a9d1042b9a73f5",
+      "subject": "feat(ui): 面板视觉重做第二版 —— 信息层级、留白、字号与图表观感",
+      "clientSha256": "129bbf3570f04662564601cf11a677e5e96a2e3285c0b34f6491cd8f4f67c051",
+      "clientBytes": 82928
+    },
+    "after": {
+      "clientSha256": "6050621f814f262370e68862a8c39479122ff7e6b84e605add0e1952dca6266d",
+      "clientBytes": 88252,
+      "worktreeDirty": true
+    },
+    "tokensSha256": "647d2b66bbbbf0eddbfd3046eacd1e394cbb5ffc7fb42892e1fa3f860e89ab3e",
+    "fixturesSha256": "0e2fc2230b43bea4f6dce86f4ddcdbf5f1dbadc5c90638a69d52584f05efb93b",
+    "identitySchema": "ui-preview/manifest/2"
+  },
+  "browser": {
+    "chromePath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "chromeVersion": "Google Chrome 157.0.8103.80",
+    "flags": "headless=new, hide-scrollbars, dpr=1, disable-lcd-text, font-render-hinting=none"
+  },
+  "shots": [
+    {
+      "id": "overview-light",
+      "file": "S:\\cluster\\docs\\evidence\\ui-1.2.0\\before\\overview-light.png",
+      "url": "http://127.0.0.1:3899/?which=baseline&theme=light&panel=main&now=1795000000000",
+      "theme": "light",
+      "panel": "main",
+      "steps": 0,
+      "nodes": 299,
+      "pngSha256": "401bb6548da8764b4e3e03526903359f9668bdb9529d11bba363ff2293ab559a",
+      "pngBytes": 125154,
+      "browser": {
+        "scriptLoaded": {
+          "src": "/bundle?which=baseline",
+          "deliveredModule": true
+        },
+        "expectedBundleSha": "129bbf3570f04662564601cf11a677e5e96a2e3285c0b34f6491cd8f4f67c051",
+        "style": {
+          "id": "dsh-cluster-ui-style",
+          "chars": 22291,
+          "sha256": "b679ad21a417c415f994ab1903cb0754b1501461a4cbb41861b7505721fe96df",
+          "rules": 157
+        },
+        "styleMatchesBundleCss": true,
+        "cssUsage": {
+          "totalSelectors": 161,
+          "deadSelectors": 38,
+          "unparsable": 0
+        },
+        "root": {
+          "cls": "dcu-root",
+          "bg": "rgb(249, 250, 251)",
+          "color": "rgb(15, 17, 21)"
+        },
+        "rendered": true
+      }
+    },
+    {
+      "id": "overview-dark",
+      "file": "S:\\cluster\\docs\\evidence\\ui-1.2.0\\before\\overview-dark.png",
+      "url": "http://127.0.0.1:3899/?which=baseline&theme=dark&panel=main&now=1795000000000",
+      "theme": "dark",
+      "panel": "main",
+      "steps": 0,
+      "nodes": 299,
+      "pngSha256": "c84cef2805611d7c053326c8f48b578e7fcbbde9accd20013f043a6a2d75e083",
+      "pngBytes": 129114,
+      "browser": {
+        "scriptLoaded": {
+          "src": "/bundle?which=baseline",
+          "deliveredModule": true
+        },
+        "expectedBundleSha": "129bbf3570f04662564601cf11a677e5e96a2e3285c0b34f6491cd8f4f67c051",
+        "style": {
+          "id": "dsh-cluster-ui-style",
+          "chars": 22291,
+          "sha256": "b679ad21a417c415f994ab1903cb0754b1501461a4cbb41861b7505721fe96df",
+          "rules": 157
+        },
+        "styleMatchesBundleCss": true,
+        "cssUsage": {
+          "totalSelectors": 161,
+          "deadSelectors": 37,
+          "unparsable": 0
+        },
+        "root": {
+          "cls": "dcu-root",
+          "bg": "rgb(21, 21, 23)",
+          "color": "rgb(249, 250, 251)"
+        },
+        "rendered": true
+      }
+    },
+    {
+      "id": "overview-expanded-light",
+      "file": "S:\\cluster\\docs\\evidence\\ui-1.2.0\\before\\overview-expanded-light.png",
+      "url": "http://127.0.0.1:3899/?which=baseline&theme=light&panel=main&now=1795000000000",
+      "theme": "light",
+      "panel": "main",
+      "steps": 4,
+      "nodes": 299,
+      "pngSha256": "5f30b093fbf54f2928f4fd7a343418d7196d8b1ebadb8aecbee2a83f0b459841",
+      "pngBytes": 111922,
+      "browser": {
+        "scriptLoaded": {
+          "src": "/bundle?which=baseline",
+          "deliveredModule": true
+        },
+        "expectedBundleSha": "129bbf3570f04662564601cf11a677e5e96a2e3285c0b34f6491cd8f4f67c051",
+        "style": {
+          "id": "dsh-cluster-ui-style",
+          "chars": 22291,
+          "sha256": "b679ad21a417c415f994ab1903cb0754b1501461a4cbb41861b7505721fe96df",
+          "rules": 157
+        },
+        "styleMatchesBundleCss": true,
+        "cssUsage": {
+          "totalSelectors": 161,
+          "deadSelectors": 38,
+          "unparsable": 0
+        },
+        "root": {
+          "cls": "dcu-root",
+          "bg": "rgb(249, 250, 251)",
+          "color": "rgb(15, 17, 21)"
+        },
+        "rendered": true
+      }
+    },
+    {
+      "id": "overview-router-open-light",
+      "file": "S:\\cluster\\docs\\evidence\\ui-1.2.0\\before\\overview-router-open-light.png",
+      "url": "http://127.0.0.1:3899/?which=baseline&theme=light&panel=main&now=1795000000000",
+      "theme": "light",
+      "panel": "main",
+      "steps": 2,
+      "nodes": 319,
+      "pngSha256": "84507e838a3a7aeb076b9d489bff21e83aaebb162fb2f28cf457c407e9f2194e",
+      "pngBytes": 152543,
+      "browser": {
+        "scriptLoaded": {
+          "src": "/bundle?which=baseline",
+          "deliveredModule": true
+        },
+        "expectedBundleSha": "129bbf3570f04662564601cf11a677e5e96a2e3285c0b34f6491cd8f4f67c051",
+        "style": {
+          "id": "dsh-cluster-ui-style",
+          "chars": 22291,
+          "sha256": "b679ad21a417c415f994ab1903cb0754b1501461a4cbb41861b7505721fe96df",
+          "rules": 157
+        },
+        "styleMatchesBundleCss": true,
+        "cssUsage": {
+          "totalSelectors": 161,
+          "deadSelectors": 28,
+          "unparsable": 0
+        },
+        "root": {
+          "cls": "dcu-root",
+          "bg": "rgb(249, 250, 251)",
+          "color": "rgb(15, 17, 21)"
+        },
+        "rendered": true
+      }
+    },
+    {
+      "id": "sync-tab-light",
+      "file": "S:\\cluster\\docs\\evidence\\ui-1.2.0\\before\\sync-tab-light.png",
+      "url": "http://127.0.0.1:3899/?which=baseline&theme=light&panel=main&now=1795000000000",
+      "theme": "light",
+      "panel": "main",
+      "steps": 2,
+      "nodes": 120,
+      "pngSha256": "b4bcc2176bef43b8bcec54be78da1f612a18df5aa77d891ff1fa611187962c69",
+      "pngBytes": 88366,
+      "browser": {
+        "scriptLoaded": {
+          "src": "/bundle?which=baseline",
+          "deliveredModule": true
+        },
+        "expectedBundleSha": "129bbf3570f04662564601cf11a677e5e96a2e3285c0b34f6491cd8f4f67c051",
+        "style": {
+          "id": "dsh-cluster-ui-style",
+          "chars": 22291,
+          "sha256": "b679ad21a417c415f994ab1903cb0754b1501461a4cbb41861b7505721fe96df",
+          "rules": 157
+        },
+        "styleMatchesBundleCss": true,
+        "cssUsage": {
+          "totalSelectors": 161,
+          "deadSelectors": 95,
+          "unparsable": 0
+        },
+        "root": {
+          "cls": "dcu-root",
+          "bg": "rgb(249, 250, 251)",
+          "color": "rgb(15, 17, 21)"
+        },
+        "rendered": true
+      }
+    },
+    {
+      "id": "settings-light",
+      "file": "S:\\cluster\\docs\\evidence\\ui-1.2.0\\before\\settings-light.png",
+      "url": "http://127.0.0.1:3899/?which=baseline&theme=light&panel=settings.section&now=1795000000000",
+      "theme": "light",
+      "panel": "settings.section",
+      "steps": 1,
+      "nodes": 61,
+      "pngSha256": "96f5978afe933eb1a66e82cd543de032d8bbdbffe4c1734ef304e78f2889006d",
+      "pngBytes": 74458,
+      "browser": {
+        "scriptLoaded": {
+          "src": "/bundle?which=baseline",
+          "deliveredModule": true
+        },
+        "expectedBundleSha": "129bbf3570f04662564601cf11a677e5e96a2e3285c0b34f6491cd8f4f67c051",
+        "style": {
+          "id": "dsh-cluster-ui-style",
+          "chars": 22291,
+          "sha256": "b679ad21a417c415f994ab1903cb0754b1501461a4cbb41861b7505721fe96df",
+          "rules": 157
+        },
+        "styleMatchesBundleCss": true,
+        "cssUsage": {
+          "totalSelectors": 161,
+          "deadSelectors": 117,
+          "unparsable": 0
+        },
+        "root": {
+          "cls": "dcu-settings",
+          "bg": "rgb(249, 250, 251)",
+          "color": "rgb(15, 17, 21)"
+        },
+        "rendered": true
+      }
+    }
+  ]
+}
